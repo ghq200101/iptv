@@ -9,16 +9,13 @@ on:
       - 'Dockerfile'
       - 'package.json'
       - 'package-lock.json'
+      - '.github/workflows/docker-publish.yml'
       - 'app.js'
       - 'config.js'
       - 'utils/**'
       - 'extractors/**'
       - 'web/**'
       - 'scripts/**'
-      - '.github/workflows/push_docker.yaml'
-  release:
-    types:
-      - published
 
 jobs:
   build-and-push:
@@ -42,25 +39,13 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
-      - name: Extract version from package.json
+      - name: Extract version
         id: version
-        shell: bash
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "major=$(echo ${VERSION} | cut -d. -f1)" >> "$GITHUB_OUTPUT"
-          echo "major_minor=$(echo ${VERSION} | cut -d. -f1-2)" >> "$GITHUB_OUTPUT"
-
-      - name: Generate Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghq200101/iptv
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "major_minor=${VERSION%.*}" >> "$GITHUB_OUTPUT"
+          echo "major=${VERSION%%.*}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -69,7 +54,10 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64/v8,linux/arm/v7,linux/arm/v6
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ghq200101/iptv:latest
+            ghq200101/iptv:${{ steps.version.outputs.version }}
+            ghq200101/iptv:${{ steps.version.outputs.major_minor }}
+            ghq200101/iptv:${{ steps.version.outputs.major }}
           cache-from: type=registry,ref=ghq200101/iptv:buildcache
           cache-to: type=registry,ref=ghq200101/iptv:buildcache,mode=max

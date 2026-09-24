@@ -1,30 +1,20 @@
 services:
   iptv:
-    image: akiralereal/iptv:latest              # 使用最新版本镜像
-    container_name: iptv                        # 自定义容器名称
-    init: true                                  # 用 init 进程回收 Chromium 退出后的僵尸进程
+    image: ghq200101/iptv:latest
+    container_name: iptv
+    init: true
     ports:
-      - "1905:1905"                             # 宿主机:容器端口映射
+      - "1905:1905"
     environment:
-      - muserId=                                # 可选：咪咕账号ID（留空为游客模式）
-      - mtoken=                                 # 可选：咪咕登录令牌（用于高画质/VIP）
-      # - mSichuanAccessToken=                  # 可选：四川广电官网登录令牌；也可在后台源管理中填写
-      - mport=1905                              # 必须：容器监听端口，与 ports 对应
-      - mhost=                                  # 可选：外部访问地址（如 http://192.168.1.100:1905）
-      - mrateType=3                             # 画质：2=标清(480p)，3=高清(720p)，4=蓝光(1080p,需VIP)
-      - mpass=                                  # 可选：访问密码（设置后访问: http://ip:port/密码/...）
-      - menableHDR=true                         # 可选：是否开启HDR
-      - menableH265=true                        # 可选：是否开启H265原画（可能有兼容性问题）
-      - mupdateInterval=6                       # 可选：节目信息更新间隔（小时）
-      # - mexternalLogoBase=https://gcore.jsdelivr.net/gh/taksssss/tv@main/icon/   # 可选：外部/抓取频道无台标时按名兜底的台标库地址（默认 taksssss 台标库的 jsDelivr 镜像，大陆可达）；留空关闭
-      # - mexternalLogoIndex=https://gcore.jsdelivr.net/gh/taksssss/tv@main/iconList_default.json   # 可选：台标库索引（有它才知道库里有没有这张图，没有就留空而不是写个 404 地址）；换了台标库又没有索引时留空
-      # ---- 内容开关（默认全开，老用户无需理会；任一设 false 即关闭对应内容）----
-      # - mblank=true                           # 空白模式总开关：开启后下面三项「默认」关闭（一行得到空白部署）；可叠加 menableMigu=true 等单独开回
-      # - menableMigu=true                      # 咪咕源（核心：CCTV/卫视抓取 + 体育赛事 + EPG），关闭后仅用内置/外部源
-      # - menableBuiltInSources=true            # 内置单频道源（纬来体育/Red Bull/4K卫视 等）
-      # - menableBuiltInSubscriptions=true      # 内置订阅源（精选频道），关闭后不加入且已删除的不再复活
-      # - mbrowserConcurrency=2                 # 可选：同时允许存活的无头 Chromium 数（默认 2）。内存 ≤2G 的 NAS/小主机建议设 1；每个 Chromium 约占 200~400MB，开多了会把机器拖进交换、表现为卡死 + 硬盘狂读写
-      - mdataDir=/iptv/data                      # 配置/数据持久化目录（对应下方挂载的卷）
+      - "mport=1905"
+      - "mdataDir=/iptv/data"
+      - "mhost=http://192.168.1.105:1905"
+      # - "mpass=change-this-password"
+      # - "mblank=true"
+      # - "menableMigu=true"
+      # - "menableBuiltInSources=true"
+      # - "menableBuiltInSubscriptions=true"
+      # - "mbrowserConcurrency=2"
     volumes:
-      - ./data:/iptv/data                        # 持久化配置与生成文件，容器重建/升级镜像后不丢失（老部署写的 /migu/data 继续有效，无需改）
-    restart: always                             # 容器异常退出后自动重启
+      - "./data:/iptv/data"
+    restart: always
