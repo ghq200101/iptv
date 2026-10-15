@@ -4,11 +4,11 @@ services:
     container_name: iptv
     init: true
     ports:
-      - "1905:1905"
+      - "52011:52011"
     environment:
-      - "mport=1905"
+      - "mport=52011"
       - "mdataDir=/iptv/data"
-      - "mhost=http://192.168.1.105:1905"
+      - "mhost=http://czghq.com:52011"
       # - "mpass=change-this-password"
       # - "mblank=true"
       # - "menableMigu=true"
