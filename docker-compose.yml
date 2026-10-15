@@ -4,11 +4,11 @@ services:
     container_name: iptv
     init: true
     ports:
-      - "25011:25011"
+      - "1905:1905"
     environment:
-      - "mport=25011"
+      - "mport=1905"
       - "mdataDir=/iptv/data"
-      - "mhost=http://192.168.1.4:25011"
+      - "mhost=http://192.168.1.105:1905"
       # - "mpass=change-this-password"
       # - "mblank=true"
       # - "menableMigu=true"
