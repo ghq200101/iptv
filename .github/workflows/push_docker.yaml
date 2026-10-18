@@ -118,17 +118,7 @@ jobs:
 
       - name: Create manifest list and push tags
         working-directory: ${{ runner.temp }}/digests
-<<<<<<< HEAD
-        # 下面的版本标签由 bump-version.js 改写（每种只改文件里第一处），保持一行一个
-        env:
-          TAGS: |
-            akiralereal/iptv:latest
-            akiralereal/iptv:4.39.0
-            akiralereal/iptv:4.39
-            akiralereal/iptv:4
-=======
         shell: bash
->>>>>>> 37ab064 (save local fork changes before sync)
         run: |
           VERSION=$(jq -r '.version' "$GITHUB_WORKSPACE/package.json")
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
