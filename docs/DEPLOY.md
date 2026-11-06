@@ -109,3 +109,29 @@ git push origin main
 | 磁盘被镜像撑满 | 多架构镜像每个都几百 MB | 脚本每次成功后清理 7 天前的悬空镜像 |
 | 定时器没跑 | 服务器时区是 UTC，03:00 实际是北京时间 11:00 | timer 里已显式写 `Asia/Shanghai` |
 | 关机错过了更新 | 默认不会补跑 | 已加 `Persistent=true` |
+
+## 老设备兼容：为什么 80 端口是明文
+
+2026-11 实际踩到的坑，记下来免得以后又推翻。
+
+**现象**：Android 4.2.2 的电视盒用 `https://iptv.czghq.com/interface.m3u` 报
+`SSL handshake aborted … error:14077410 … sslv3 alert handshake failure`。
+
+**真因**：这个 Cloudflare zone 的边缘**只提供 ECDSA 证书和 ECDSA 套件**（实测
+`TLS_ECDHE_ECDSA_AES128_CBC_SHA` 可谈，而 `AES128-SHA`、`ECDHE-RSA-AES128-GCM-SHA256`
+在 TLS1.0/1.2 下都直接回 alert 40）。Android 4.2 的 TLS 栈只有 RSA 套件，没有交集就
+必然握手失败。**不是 TLS 版本问题**，把 Minimum TLS Version 调到 1.0 没用；也不是
+IP 被封（改成跟容器实际镜像比较那次已经验证过，国内直连 Cloudflare 是通的）。
+
+**解法**：`80` 端口提供纯 HTTP 入口，反代到容器并把 m3u 里的 `https://` 全量改写成
+`http://`。老设备全程不碰 TLS，SNI / ECDSA / 证书信任三关一起绕过。
+
+**依赖**（任何一条被破坏，老设备立刻回退到不可用）：
+
+1. Cloudflare `SSL/TLS → 边缘证书 → 始终使用 HTTPS` **必须保持关闭**；
+2. `/usr/local/nginx/conf/vhost/iptv.czghq.com.conf` 的 80 段必须保持反代，
+   不要换回 `return 301 https://…`（仓库里的 `deploy/iptv.czghq.com.nginx.conf` 是它的副本）；
+3. 源站 `docker-compose.yml` 端口必须是 `127.0.0.1:2086`，对外只经 nginx。
+
+`/admin` 单独 301 回 https，后台不会被明文访问。
+
