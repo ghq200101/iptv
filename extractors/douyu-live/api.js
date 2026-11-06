@@ -2,12 +2,21 @@
 import { createHash } from 'node:crypto'
 import vm from 'node:vm'
 import fetch from 'node-fetch'
+import { qualityFrom } from '../../utils/qualityOverride.js'
+import { isWatchTogetherFilm } from '../watchTogether.js'
 
 export const DOUYU_GROUP = '斗鱼'
 export const REFERER = 'https://m.douyu.com/'
 export const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) '
   + 'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
 export const DEFAULT_MIN_HEAT = 100000
+export const DEFAULT_QUALITY = 3
+// 后台下拉框与播放地址 ?quality= 共用这一份档位表
+export const QUALITY_OPTIONS = Object.freeze([
+  { value: 0, label: '原画 / 最高画质' },
+  { value: 3, label: '超清 2M（推荐）' },
+  { value: 2, label: '高清 900K' },
+])
 
 // 这些都是官网分类页 var $DATA.pagePath 当前指向的 JSON 接口。与直接解析页面卡片
 // 相比，字段更稳定、响应也小得多；分类名仍与官网导航保持一致。
@@ -17,6 +26,7 @@ export const AREA_APIS = Object.freeze({
   单机热游: 'https://www.douyu.com/gapi/rkc/directory/mixListV1/1_15/1',
   手游休闲: 'https://www.douyu.com/gapi/rkc/directory/mixListV1/1_9/1',
   娱乐: 'https://www.douyu.com/gapi/rkc/directory/mixListV1/1_2/1',
+  一起看: 'https://www.douyu.com/gapi/rknc/directory/mixListV1/2_208/1',
 })
 
 // 斗鱼网页播放器没有登录时使用的固定设备号。它不是账号凭据，只是匿名设备标识；
@@ -35,9 +45,11 @@ export class DouyuError extends Error {
 }
 
 export class DouyuOfflineError extends DouyuError {
-  constructor(message) {
+  /** room：未开播房间的主播名和头像，手动房间靠它照样列出频道。 */
+  constructor(message, room = null) {
     super(message)
     this.name = 'DouyuOfflineError'
+    this.room = room
   }
 }
 
@@ -145,6 +157,7 @@ export async function topRoomsOfArea(areaName, limit, options = {}) {
   const response = await fetchResponse(url, options)
   const rooms = normalizeCategoryPayload(await response.json())
   return rooms
+    .filter(room => areaName !== '一起看' || isWatchTogetherFilm('douyu', room, room.category))
     .filter(room => room.heat >= Number(options.minHeat || 0))
     .sort((a, b) => b.heat - a.heat)
     .slice(0, Math.max(0, Number(limit) || 0))
@@ -163,7 +176,14 @@ export function parseMobileRoomPage(html, requestedRoom = '') {
   const info = context?.pageProps?.room?.roomInfo?.roomInfo
   if (!info || !info.rid) throw new DouyuError(`斗鱼房间 ${requestedRoom || ''} 数据不完整`.trim())
   const roomId = normalizeRoom(info.rid)
-  if (Number(info.isLive) !== 1) throw new DouyuOfflineError(`斗鱼房间 ${roomId} 当前未开播`)
+  if (Number(info.isLive) !== 1) {
+    throw new DouyuOfflineError(`斗鱼房间 ${roomId} 当前未开播`, {
+      roomId,
+      nick: String(info.nickname || '').trim(),
+      logo: String(info.avatar || info.roomSrc || '').replace(/^\/\//, 'https://'),
+      offline: true,
+    })
+  }
   const signerCode = String(context?.crptext || '')
   if (!signerCode.includes('function ub98484234')) {
     throw new DouyuError('斗鱼房间页缺少匿名播放签名函数')
@@ -235,6 +255,17 @@ export function isOfficialStreamUrl(raw) {
   }
 }
 
+// 流名后缀 → 档位；没有后缀是原画
+const STREAM_SUFFIX_TIERS = new Map([['4000', '蓝光4M'], ['2000', '超清'], ['900', '高清']])
+
+function streamSuffix(pathname) {
+  return /_(\d+)\.m3u8$/i.exec(String(pathname || ''))?.[1] || ''
+}
+
+export function streamTierName(pathname) {
+  return STREAM_SUFFIX_TIERS.get(streamSuffix(pathname)) || ''
+}
+
 async function resolveFresh(room, ctx) {
   const page = await fetchRoom(room, { timeoutMs: ctx.timeoutMs, fetchImpl: ctx.fetchImpl })
   const now = Number(ctx.now ?? Date.now())
@@ -242,7 +273,7 @@ async function resolveFresh(room, ctx) {
   const signed = createMobileSign(page.signerCode, page.roomId, ANONYMOUS_DID, timestamp)
   signed.set('ver', MOBILE_PLAYER_VERSION)
   signed.set('rid', page.roomId)
-  signed.set('rate', String(Number(ctx.config?.quality ?? 3)))
+  signed.set('rate', String(qualityFrom(ctx, QUALITY_OPTIONS, DEFAULT_QUALITY)))
 
   const response = await fetchResponse('https://m.douyu.com/hgapi/livenc/room/getStreamUrl', {
     timeoutMs: ctx.timeoutMs,
@@ -258,11 +289,16 @@ async function resolveFresh(room, ctx) {
   const url = new URL(String(data.url || ''))
   if (url.protocol === 'http:') url.protocol = 'https:'
   if (!isOfficialStreamUrl(url.href)) throw new DouyuError('斗鱼返回的 HLS 地址不属于官方 CDN')
+  const requested = Number(signed.get('rate'))
   const selected = (Array.isArray(data.settings) ? data.settings : [])
     .find(item => Number(item?.rate) === Number(data.rate))
+  // 接口回的 rate 跟着请求走、不可信：未登录要原画也照样回「原画1080P60」，地址却是
+  // xxx_2000.m3u8（超清 720P）。档位以地址里的流名后缀为准。
+  const actual = streamTierName(url.pathname) || selected?.name || '直播'
+  const capped = requested === 0 && STREAM_SUFFIX_TIERS.has(streamSuffix(url.pathname))
   return {
     url: url.href,
-    desc: `斗鱼「${page.name}」${selected?.name || '直播'}地址获取成功`,
+    desc: `斗鱼「${page.name}」${actual}地址获取成功${capped ? '（未登录官方最高只给到这一档）' : ''}`,
     relayHls: true,
     upstreamHeaders: { Referer: REFERER, 'User-Agent': UA },
   }
@@ -274,7 +310,7 @@ export async function resolveRoom(ref, ctx = {}) {
     if (!match) return { url: '', desc: '斗鱼房间引用格式错误' }
     const room = normalizeRoom(match[1])
     const now = Number(ctx.now ?? Date.now())
-    const quality = Number(ctx.config?.quality ?? 3)
+    const quality = qualityFrom(ctx, QUALITY_OPTIONS, DEFAULT_QUALITY)
     const key = `${room}:${quality}`
     const cached = resolveCache.get(key)
     if (cached && cached.expiresAt > now) return cached.value

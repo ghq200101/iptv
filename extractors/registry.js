@@ -22,9 +22,14 @@
  *                                 'standard'（免账号的普通官方抓取模块）
  *   defaultEnabled        boolean 可选；用户没在卡片上点过开关时开不开，不声明即开。
  *                                 只有面向海外、在大陆连不上或常卡顿的模块写 false
- *                                 （海外频道、澳门），由用户自己打开；各模块在海外的
+ *                                 （海外频道、澳门），由用户自己打开；频道量大、只有本地少数人
+ *                                 看的市县模块也可以（山东市县，两百来台按地市分组；市县台各省模块）；
+ *                                 福建百视通以重复频道备用为主，按用户要求默认关；WebSports 来自第三方赛事网站，不进默认内容；各模块在海外的
  *                                 实测见仓库根目录 OVERSEAS.md。v4.29.0 及以前已有的模块
  *                                 在存量配置里多已落成 enabled:true，改它们的默认值要另写迁移
+ *   enableNotice          string  可选；用户在后台打开这个模块前要看的一句话。卡片开关先弹确认，
+ *                                 点「取消」不打开；「批量开关」里勾上它，摘要下面列出这句话。
+ *                                 给能不能播看部署网络的模块用（辽宁）；默认开的模块，用户关掉后再打开才看得到
  *   capabilities          object  { cache: 'disk'|'memory'|'none',
  *                                   resolve: boolean, epg: boolean }
  *   catalogVersion        number  可选；代码内置频道表变更时递增。缓存版本不一致会在
@@ -35,9 +40,14 @@
  *   refreshConfigurable   boolean 可选；false 表示刷新策略由模块自动管理，后台只读
  *   refreshDescription    string  可选；自动刷新策略的后台说明
  *   outputGroupName       string  可选；播放列表统一分组名，并合并模块原有的多个子组
+ *   region                string  可选；后台源管理「免账号」里的面板名。不声明时 outputGroupName
+ *                                 是省级地区（REGION_NAMES）就用它；分组名不是地区（上海景观）、
+ *                                 按地市拆组（山东市县）的显式声明。不是地区的专题面板（国际、
+ *                                 直播中国、iPanda）也用它，排在各省面板前面
  *   preserveGroupSuffixes array   可选；命中这些后缀的特殊分组不被 outputGroupName 覆盖
  *   channelHlsMode        string  可选；'proxy' 或 'relay'，在输出时覆盖频道缓存中的
  *                                 HLS 路由标记，适合整个平台统一要求代理的模块
+ *   channelHlsModeForConfig(config) 可选；按当前生效配置返回 'proxy'/'relay'，覆盖上面的固定模式
  *   relayProxyCompatible boolean 可选；true 表示模块的 relay 频道可被 `?relay=2`
  *                                 安全升级为全代理；默认不升级，避免破坏拒绝服务端分片的 CDN
  *   resolveBurstGuard     boolean 可选；true 表示播放请求经 utils/clientScanGuard.js 的客户端
@@ -48,7 +58,8 @@
  *   streamType            string  可选；默认 hls，flv 由本机流式代理且不转码。
  *                                 FLV resolve 须返回 validateMediaUrl 校验官方调度跳转。
  *   capabilities.catchup boolean 可选；false 表示纯直播，不透传回看查询参数。
- *   configSchema          array   字段描述，后台据此渲染表单、后端据此校验
+ *   configSchema          array   字段描述，后台据此渲染表单、后端据此校验。值会进请求头的
+ *                                 文本字段声明 headerValue: true，保存时去首尾空白、拦下非法字符
  *   credentialCheck       object  要登录的模块（有 secret 字段或 browserLoginFlow）必需：
  *                                 { refresh: 刷新时检查凭证并报 meta.credentialRejected,
  *                                   playback: 播放时发现并经 credentialRejected(config) 上报,
@@ -74,6 +85,8 @@
  *
  *   async resolve(ref, ctx) → { url, desc, segmentTransform?, upstreamHeaders?,
  *                                upstreamUrlTransform?, manifestText?, manifestUrl? }
+ *       upstreamFamily 可选 4/6；显式直连该地址族，清单/子清单/分片/HEAD 共用，需同时要求 proxyHls。
+ *       proxyHls=true 可要求旧 relay 入口也转发媒体，供 IPv6 上游与 IPv4 播放器组合使用。
  *       可选，capabilities.resolve 为真时必需。用于「播放时才算地址」的模块：
  *       fetch() 里频道给 deferredRef，写盘时落成 ${replace}/<ref>，播放请求
  *       到达时才调 resolve。B 站不需要——它是直链。
@@ -95,6 +108,9 @@
  *       异常等于请求永远不 res.end()、客户端挂死到超时。
  *       解析结果的缓存由模块自己管（TTL 往往是签名有效期这种平台属性）。
  *
+ *   groupsFromConfig(config) 可选。纯本地目录在保存配置时同步重建，停用期间的修改也进入频道缓存。
+ *   playbackRequiresEnabled 为真时，停用模块也关闭已收藏的频道地址和已发出的媒体地址。
+ *   fetchProxyMedia(ref, config, url, options) 可选。签名在连续播放中到期时，重取同一场次、轨道和分片。
  *   claimsRef(ref) → boolean
  *       capabilities.resolve 为真时必需。判断某个 ref 是不是自己的，
  *       播放请求靠它路由到模块。
@@ -105,7 +121,9 @@
  *   claimsLocalPath(path) → boolean + async handleLocalRequest(ctx) → response
  *       可选成对实现。供需要把进程内媒体 Buffer 作为 HLS 输出的模块使用；普通
  *       上游 HLS 不要走这里。ctx: { path, method, headers, accessPrefix, client }，response:
- *       { status, headers, body }。app.js 仍统一负责访问鉴权与 HTTP 写出。
+ *       { status, headers, body, dispose? }。body 支持 Buffer、字符串和 Web/Node
+ *       Readable；流式媒体由 app.js 维持背压，HEAD/断连/结束时调用 dispose。
+ *       app.js 仍统一负责访问鉴权与 HTTP 写出。
  *       client 是 { key, tag } 形式的客户端身份。这条路由不经 resolve，resolveBurstGuard
  *       管不到；要启动高成本本地会话（浏览器页等）的模块应自己在启动前调
  *       utils/clientScanGuard.js 的 checkModuleBurst，与 resolve 路径共用一本账。
@@ -139,6 +157,8 @@
  *   catchup    可选 'none'，显式关闭该台继承订阅头的全局回看能力
  *   trailing   可选 true，海外台：排到所在分组最后，跟在各台官方频道与精选列表等外部订阅
  *              之后（extractors/overseas）
+ *   leading    可选 true，打头频道：排到所在分组的模块频道最前（多个时保持原顺序）。给并进
+ *              别的模块先建好的分组、又该排第一的台用（市县台并进「山东-淄博」的淄博新闻综合）
  *   supplement 可选 true，补充频道：追加在同组所有模块频道之后，不决定分组位置
  *              （咪咕并进地区分组的频道，见 extractors/migu 的 MIGU_LOCAL_SUPPLEMENTS）
  *   supersedesFeatured 可选 true，模块接手了精选频道（IPTV.m3u）里的这台：同组同名的精选频道条目
@@ -149,21 +169,25 @@
  */
 import bilibiliLive from './bilibili-live/index.js'
 import douyinLive from './douyin-live/index.js'
+import youtubeLive from './youtube-live/index.js'
 import asianLive from './asian-live/index.js'
 import anhui from './anhui/index.js'
-import beidou from './beidou/index.js'
 import beijing from './beijing/index.js'
 import chongqing from './chongqing/index.js'
 import sichuan from './sichuan/index.js'
 import chengdu from './chengdu/index.js'
+import sichuanCities from './sichuan-cities/index.js'
 import cztv from './cztv/index.js'
 import dalian from './dalian/index.js'
+import liaoning from './liaoning/index.js'
 import douyuLive from './douyu-live/index.js'
 import fjtv from './fjtv/index.js'
+import bestvFj from './bestv-fj/index.js'
 import fengshows from './fengshows/index.js'
 import gansu from './gansu/index.js'
 import gdtv from './gdtv/index.js'
 import gdsportEvents from './gdsport-events/index.js'
+import websports from './websports/index.js'
 import gztv from './gztv/index.js'
 import hangzhou from './hangzhou/index.js'
 import gzstv from './gzstv/index.js'
@@ -183,6 +207,7 @@ import jstv from './jstv/index.js'
 import jiaxing from './jiaxing/index.js'
 import taizhou from './taizhou/index.js'
 import shaoxing from './shaoxing/index.js'
+import zhejiangLocal from './zhejiang-local/index.js'
 import iqilu from './iqilu/index.js'
 import kankanews from './kankanews/index.js'
 import livechina from './livechina/index.js'
@@ -210,8 +235,12 @@ import xinjiang from './xinjiang/index.js'
 import xizang from './xizang/index.js'
 import wuxi from './wuxi/index.js'
 import yangzhou from './yangzhou/index.js'
+import nantong from './nantong/index.js'
+import yancheng from './yancheng/index.js'
 import yunnan from './yunnan/index.js'
 import tdm from './tdm/index.js'
+import guangdianyunModules from './guangdianyun/index.js'
+import shandongCounties from './shandong-counties/index.js'
 import overseas from './overseas/index.js'
 
 // 模块 id 会进 sourceId 并写进 EXTINF 属性值，不消毒就是注入面。
@@ -230,15 +259,18 @@ const MODULES = [
   asianLive,
   bilibiliLive,
   douyinLive,
+  youtubeLive,
   huyaLive,
   douyuLive,
+  websports,
   anhui,
-  beidou,
   beijing,
   chongqing,
   sichuan,
   chengdu,
+  sichuanCities,
   dalian,
+  liaoning,
   gansu,
   gdtv,
   gdsportEvents,
@@ -246,6 +278,7 @@ const MODULES = [
   gzstv,
   gxtv,
   fjtv,
+  bestvFj,
   quanzhouMinnan,
   quanzhouCounty,
   putian,
@@ -263,12 +296,16 @@ const MODULES = [
   jiaxing,
   taizhou,
   shaoxing,
+  zhejiangLocal,
   jstv,
   wuxi,
   yangzhou,
+  nantong,
+  yancheng,
   iqilu,
   sztv,
   meizhouHakka,
+  // 江门官方直播 CDN 持续 502，2026-10-27 暂时取消注册；解析模块保留供恢复。
   njtv,
   nmtv,
   shanxi,
@@ -286,6 +323,10 @@ const MODULES = [
   livechina,
   ipanda,
   mgtv,
+  // 山东市县在市县台之前：「山东-济南」…「山东-菏泽」按它的地市顺序先建好，市县台的淄博、菏泽两台再并进去
+  shandongCounties,
+  // 市县台（广电云，按省拆成 20 个模块）跟在各省级、地市模块之后：并进同省分组时排在省台、市台后面
+  ...guangdianyunModules,
   // 海外频道排最后：并进体育、文旅等现有分组时，跟在各台官方频道后面
   overseas,
 ]
@@ -304,6 +345,9 @@ export function validateModule(module) {
   if (module.defaultEnabled != null && typeof module.defaultEnabled !== 'boolean') {
     throw new Error(`抓取模块 ${module.id} 的 defaultEnabled 必须是布尔值`)
   }
+  if (module.enableNotice != null && (typeof module.enableNotice !== 'string' || !module.enableNotice.trim())) {
+    throw new Error(`抓取模块 ${module.id} 的 enableNotice 必须是非空字符串`)
+  }
   if (module.category != null && !MODULE_CATEGORIES.has(module.category)) {
     throw new Error(`抓取模块 ${module.id} 的 category 非法: ${JSON.stringify(module.category)}`)
   }
@@ -316,6 +360,9 @@ export function validateModule(module) {
   }
   if (module.channelHlsMode != null && !['proxy', 'relay'].includes(module.channelHlsMode)) {
     throw new Error(`抓取模块 ${module.id} 的 channelHlsMode 非法: ${JSON.stringify(module.channelHlsMode)}`)
+  }
+  if (module.channelHlsModeForConfig != null && typeof module.channelHlsModeForConfig !== 'function') {
+    throw new Error(`抓取模块 ${module.id} 的 channelHlsModeForConfig 必须是函数`)
   }
   if (module.relayProxyCompatible != null && typeof module.relayProxyCompatible !== 'boolean') {
     throw new Error(`抓取模块 ${module.id} 的 relayProxyCompatible 必须是布尔值`)
@@ -349,6 +396,23 @@ for (const module of MODULES) {
     throw new Error(`抓取模块 id 重复: ${module.id}`)
   }
   registry.set(module.id, module)
+}
+
+// 后台按地区收面板用的地区名：省、自治区、直辖市和港澳台
+export const REGION_NAMES = new Set([
+  '北京', '天津', '上海', '重庆',
+  '河北', '山西', '辽宁', '吉林', '黑龙江',
+  '江苏', '浙江', '安徽', '福建', '江西', '山东',
+  '河南', '湖北', '湖南', '广东', '海南',
+  '四川', '贵州', '云南', '陕西', '甘肃', '青海',
+  '内蒙古', '广西', '西藏', '宁夏', '新疆',
+  '香港', '澳门', '台湾',
+])
+
+/** 模块所属面板（后台用）：省级地区或专题名；不归面板的返回空串。 */
+export function moduleRegion(module) {
+  if (typeof module?.region === 'string') return module.region
+  return REGION_NAMES.has(module?.outputGroupName) ? module.outputGroupName : ''
 }
 
 /** 全部模块，顺序即后台展示顺序。 */

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
-import { generateKeyPairSync } from 'node:crypto'
+import { createHash, generateKeyPairSync } from 'node:crypto'
 
 import xinjiang from '../extractors/xinjiang/index.js'
 import {
@@ -144,18 +144,96 @@ check('字符串表被旋转过时只认自检表达式定出的那一档，不�
   assert.throws(() => extractSigningMaterial(short, '2029-01-01'), /没有 2029-01-01 的配置/)
 })
 
+// 回归：官网 2026-10 把 RSA 公钥搬进了字符串表内部（反引号模板字符串），
+// 旧实现用 JSON.parse 解表，整张表直接被跳过；公钥也不再是配置块的右边界。
+// 下面这份包把公钥放进数组、配置分居数组函数前后，正是官网现在的排布。
+const TOKEN = 'abcdefghijklmnopqrstuvwxyzABCDEFGH'
+const templateBundle = [
+  'function decode(t,e){return t=t-0,Seeds()[t]}',
+  'const T=decode;',
+  '(function(t,e){const n=decode,r=t();for(;;)try{if(parseInt(n(5))/1+parseInt(n(6))/2===e)break;r.push(r.shift())}catch(s){r.push(r.shift())}})(Seeds,5255);',
+  'const before={};before[T(0)]=T(1),before[T(2)]=T(3),before[T(4)]=5;',
+  'function Seeds(){const t=["random_number","4242","2026-02-02",`' + pem + '`,"date","2026-02-01","random_string","' + TOKEN + '"];return Seeds=function(){return t},Seeds()}',
+  'const after={};after[T(0)]=T(6),after[T(2)]=T(3),after[T(4)]=9;',
+  'const rows=[before,after];',
+].join('\n')
+// 官网另一张表用的是自替换形态的解码器，旋转写成 while(!![]){try{...}} 而不是 for(;;)try{...
+const selfReplaceBundle = [
+  'function Seeds(){const t=["random_number","4242","2026-03-02","' + TOKEN + '","date","2026-03-01","random_string"];return Seeds=function(){return t},Seeds()}',
+  'function decode(t,e){const n=Seeds();return decode=function(t,e){return t=t-0,n[t]},decode(t,e)}',
+  '(function(t,e){const n=decode,r=t();while(!![]){try{if(parseInt(n(4))/1+parseInt(n(5))/2===e)break;r.push(r.shift())}catch(s){r.push(r.shift())}})(Seeds,5255);',
+  'const T=decode;',
+  'const row={};row[T(0)]=T(1),row[T(2)]=T(6),row[T(3)]=11;',
+  'const key=`' + pem + '`;',
+].join('\n')
+// 反例：字符串表里出现模板插值就不是常量表，宁可整张作废也不能猜
+const interpolatedBundle = [
+  'function decode(t,e){return t=t-0,Seeds()[t]}',
+  'const T=decode;',
+  '(function(t,e){const n=decode,r=t();for(;;)try{if(parseInt(n(2))/1===e)break;r.push(r.shift())}catch(s){r.push(r.shift())}})(Seeds,2026);',
+  'function Seeds(){const t=["date",`${1 + 1}`,"2026-04-01","random_string","' + TOKEN + '","random_number"];return Seeds=function(){return t},Seeds()}',
+  'const row={};row[T(0)]=T(2),row[T(3)]=T(4),row[T(5)]=4;',
+  'const key=`' + pem + '`;',
+].join('\n')
+
+check('字符串表混有模板字符串、且配置块分居数组函数前后时照样解析', () => {
+  const earlier = extractSigningMaterial(templateBundle, '2026-02-01')
+  assert.equal(earlier.random_string, TOKEN)
+  assert.equal(earlier.random_number, 5)
+  // 数组函数之后的配置也要取得到：早先拿公钥当右边界，这里会被整段截掉
+  const later = extractSigningMaterial(templateBundle, '2026-02-02')
+  assert.equal(later.date, '2026-02-02')
+  assert.equal(later.random_number, 9)
+  assert.equal(later.publicKey, pem)
+})
+
+check('解码器是自替换形态、数组旋转写成 while(!![]) 时照样解析', () => {
+  const material = extractSigningMaterial(selfReplaceBundle, '2026-03-01')
+  assert.equal(material.random_string, TOKEN)
+  assert.equal(material.random_number, 11)
+  assert.equal(material.publicKey, pem)
+})
+
+check('字符串表里有模板插值就整张表作废，不许猜出配置', () => {
+  assert.throws(() => extractSigningMaterial(interpolatedBundle, '2026-04-01'), /没有 2026-04-01 的配置/)
+})
+
 check('接口签名、上海日期和 Nuxt 脚本发现均受严格约束', () => {
   const material = extractSigningMaterial(signingBundle, '2029-01-01')
   const signed = createSignedParams(XINJIANG_CHANNEL_ENDPOINT, '1861920000000', material, {
-    now, random: () => 0.25,
+    now, random: () => 0.123456789,
   })
-  assert.match(signed.guid, /^[a-z0-9]+-[a-z0-9]{7}$/)
+  assert.match(signed.guid, /^[a-z0-9]+-[a-z0-9]+$/)
+  assert.equal(signed.guid[8], '-')
+  assert.equal(signed.hash, `000${signed.hash.slice(3)}`)
+  assert.equal(signed.hash, createHash('sha256')
+    .update(`${signed.ts}${signed.x}`).digest('hex'))
   assert.match(signed.sign, /^[a-f0-9]{32}[A-Za-z0-9+/]+=*$/)
   assert.equal(shanghaiDate(Date.parse('2028-12-31T16:01:00Z')), '2029-01-01')
   assert.deepEqual(scriptUrls(
     '<script src="/_nuxt/live_A-1.js"></script><script src="https://evil.test/_nuxt/no.js"></script><script src="/plain.js"></script>',
     XINJIANG_PAGE,
   ), ['https://www.xjtvs.com.cn/_nuxt/live_A-1.js'])
+})
+
+check('random_number ≥ 15 时 md5 用第 8 位换成 y 的 guid 变体，工作量证明随 ts 固定', () => {
+  const material = { random_string: 'abcdefghijklmnopqrstuvwxyzABCDEFGH', random_number: 20, publicKey: pem }
+  const stamp = '1861920000000'
+  const signed = createSignedParams(XINJIANG_CHANNEL_ENDPOINT, stamp, material, {
+    now, random: () => 0.123456789, powTs: 1861920000123,
+  })
+  const md5 = text => createHash('md5').update(text, 'ascii').digest('hex')
+  const token = 'abcdefghijklmnopqrstuvwxyzABCDEFGH'.replace('u', '')
+  const signGuid = `${signed.guid.slice(0, 8)}y${signed.guid.slice(9)}`
+  const endpoint = XINJIANG_CHANNEL_ENDPOINT.slice(1)
+  assert.equal(signed.sign.slice(0, 32), md5(`${token}${signGuid}${stamp}${endpoint}`))
+  assert.notEqual(signed.sign.slice(0, 32), md5(`${token}${signed.guid}${stamp}${endpoint}`))
+  assert.equal(signed.ts, 1861920000123)
+  assert.match(signed.hash, /^000[a-f0-9]{61}$/)
+  assert.equal(signed.hash, createHash('sha256').update(`${signed.ts}${signed.x}`).digest('hex'))
+  assert.equal(createSignedParams(XINJIANG_CHANNEL_ENDPOINT, stamp, material, {
+    now, random: () => 0.5, powTs: 1861920000123,
+  }).x, signed.x)
 })
 
 check('频道接口逐路校验：标禁播、缺席或台号对不上的只跳过那一路，一路都没有才报错', () => {
@@ -227,6 +305,9 @@ await checkAsync('首次播放完成签名发现，各路共享短效入口缓�
       assert.equal(url.searchParams.get('json'), 'true')
       assert.equal(url.searchParams.get('stamp'), '1861920000000')
       assert.match(url.searchParams.get('sign') || '', /^[a-f0-9]{32}[A-Za-z0-9+/]+=*$/)
+      assert.match(url.searchParams.get('hash') || '', /^000[a-f0-9]{61}$/)
+      assert.equal(url.searchParams.get('hash'), createHash('sha256')
+        .update(`${url.searchParams.get('ts')}${url.searchParams.get('x')}`).digest('hex'))
       return response(apiPayload())
     }
     if (url.hostname === 'slstplay.xjtvs.com.cn') {
@@ -297,4 +378,4 @@ await checkAsync('当前节目被标禁播时说明是这档节目限播，不�
   assert.notEqual((await resolver.resolve('xjtv-4', { now })).url, '')
 })
 
-console.log(`\n全部通过：${passed}/11 ✅`)
+console.log(`\n全部通过：${passed}/15 ✅`)

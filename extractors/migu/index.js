@@ -34,6 +34,7 @@ import { resolve, clearCache } from "./resolve.js"
 import { enableMigu } from "../../config.js"
 import { setSystemFlagAPI } from "../../utils/systemConfigAPI.js"
 import { checkAccount, credentialRejected } from "./account.js"
+import danmaku from "./danmaku.js"
 
 /**
  * 跨分组去重：同一个 pID 只留在**最先出现**的那个分组里；
@@ -220,6 +221,7 @@ export default {
       section: '咪咕账号（选填，决定可用画质上限）',
       label: '咪咕账号 ID',
       type: 'text',
+      headerValue: true,
       env: 'muserId',
       default: '',
       hint: '填咪咕账号可解锁更高画质：免费账号即到 720p；游客不填最高 540p，1080p+ 需 VIP。',
@@ -232,6 +234,7 @@ export default {
       label: '咪咕 Token',
       type: 'text',
       secret: true,
+      headerValue: true,
       env: 'mtoken',
       default: '',
       hint: '留空为游客模式。等同登录态，别外传。',
@@ -328,6 +331,12 @@ export default {
   resolveBurstGuard: true,
 
   clearResolveCache: clearCache,
+
+  // 体育赛事直播弹幕（统一弹幕接口的直播扩展，见 DANMAKU.md）：/danmaku/migu/<pID>[/live|/segments]
+  // 走 app.js 的本机路由钩子，鉴权与频道地址同一套；聊天室 ID 由 updatePE 抓赛事时记下
+  claimsLocalPath: danmaku.claimsLocalPath,
+  handleLocalRequest: danmaku.handleLocalRequest,
+  shutdown: danmaku.shutdown,
 
   credentialRejected,
 

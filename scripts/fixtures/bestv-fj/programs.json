@@ -1,0 +1,39 @@
+{
+  "programs": [
+    {
+      "name": "艺术大厅",
+      "startTime": 1793203200,
+      "endTime": 1793204520,
+      "available": 0,
+      "id": "28497938"
+    },
+    {
+      "name": "寻鱼记（5）",
+      "startTime": 1793204520,
+      "endTime": 1793207700,
+      "available": 0,
+      "id": "28497940"
+    },
+    {
+      "name": "前途无量（2）",
+      "startTime": 1793207700,
+      "endTime": 1793210220,
+      "available": 0,
+      "id": "28497943"
+    },
+    {
+      "name": "前途无量（3）",
+      "startTime": 1793210220,
+      "endTime": 1793212740,
+      "available": 0,
+      "id": "28497946"
+    },
+    {
+      "name": "前途无量（4）",
+      "startTime": 1793212740,
+      "endTime": 1793215200,
+      "available": 0,
+      "id": "28497949"
+    }
+  ]
+}

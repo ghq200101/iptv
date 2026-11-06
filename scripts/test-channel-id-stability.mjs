@@ -63,6 +63,19 @@ check('只带时效参数时，剥完退化成无 query 的地址（与本来就
   assert.equal(id(`${bare}?expire=1&sign=a`), id(bare))
 })
 
+check('格尔木、海东官方直链换 sign/t 后仍保留同一频道身份，其它源的 t 台号保留', () => {
+  for (const base of [
+    'https://miku-live-hls-gemwkl-tv.geermurmt.cn/gemwkl-tv/xwzh.m3u8',
+    'https://hls-hdapp.hdhhy.cn/ashh-tv/zhds.m3u8',
+  ]) {
+    assert.equal(id(`${base}?sign=${'a'.repeat(32)}&t=1876791311`),
+      id(`${base}?sign=${'b'.repeat(32)}&t=1886228277`))
+  }
+  const other = 'https://other.example/live.m3u8'
+  assert.notEqual(id(`${other}?sign=${'a'.repeat(32)}&t=1876791311`),
+    id(`${other}?sign=${'b'.repeat(32)}&t=1886228277`))
+})
+
 // ── 2. 安全边界：不能剥过头，否则两条频道会撞成一个、播放列表静默少频道 ──────
 check('非时效参数（qn 清晰度）不同 → ID 必须不同', () => {
   const base = 'http://cdn.example.com/live/ch.m3u8'
@@ -145,4 +158,4 @@ check('端到端：重命名同样跨换签名保留', () => {
   assert.ok(after.some(g => g.channels.some(c => c.name === '纬来体育台')))
 })
 
-console.log(`\n全部通过：${passed}/14 ✅`)
+console.log(`\n全部通过：${passed} ✅`)

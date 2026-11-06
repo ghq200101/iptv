@@ -35,13 +35,6 @@ const ENV_KEY_MAP = {
   enableClientDispatch: 'menableClientDispatch'
 }
 
-// 解析环境变量布尔（与 config.js parseBool 同义）：用于判断 mblank 空白模式是否由 env 开启
-function envBool(value) {
-  if (value === undefined || value === null || value === '') return false
-  const s = String(value).trim().toLowerCase()
-  return s !== 'false' && s !== '0' && s !== 'off' && s !== 'no'
-}
-
 export function getSystemConfigAPI() {
   try {
     // 返回「实际生效」的配置：config.js 已把 system-config.json + 环境变量 + 默认值 解析合并。
@@ -79,9 +72,7 @@ export function getSystemConfigAPI() {
         enableDisplayNameUnify,
         enableClientDispatch
       },
-      envOverrides,
-      // 空白模式总开关是否由环境变量 mblank 开启（前端据此提示：内容开关默认关闭，可在此单独打开覆盖）
-      blankModeEnv: envBool(process.env.mblank)
+      envOverrides
     }
   } catch (error) {
     return {

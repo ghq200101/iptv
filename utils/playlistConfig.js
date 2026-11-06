@@ -9,6 +9,8 @@ import { matchKeywordGroup } from "./groupRulesAPI.js"
 import { normalizeHiddenRules, matchHiddenRule } from "./hiddenRules.js"
 import { matchSourceFallbackGroup } from "./sourceGroupFallback.js"
 import { collectOptsUntilUrl, renderOpts, needsOpts } from "./channelOpts.js"
+import { parseCatchupAttrs, renderCatchupAttrs } from "./channelCatchup.js"
+import { markFengshowsLiveUrls } from "../extractors/fengshows/channels.js"
 import { ANNOUNCEMENT, isAnnouncementChannel, protectAnnouncementConfig, systemChannelByUrl } from "./announcement.js"
 
 // 台标来源分类（供后台展示）：本地上传 / 源自带 / 公共库兜底 / 无。
@@ -36,9 +38,11 @@ const DEFAULT_PROFILE = { id: 'default', name: '默认' }
 // groupOrder，下方 applyConfig 仍以用户顺序为最终优先级。
 // 「央视频」排在咪咕的「央视」「卫视」之后：它匿名虽有 1080p，但官方线路起播慢、
 // 偶尔卡，播放器按名聚合成「源1 / 源2」时先走咪咕，央视频作备用（作者 09-27 调整）。
+const SPORTS_GROUPS = ['体育', '体育-昨天', '体育-今天', '体育-明天']
 export const DEFAULT_GROUP_ORDER = [
   '公告',
-  '体育', '体育-昨天', '体育-今天', '体育-明天',
+  ...SPORTS_GROUPS,
+  '赛事直播',
   '央视', '卫视', '央视频', '亚太', '国际', '影视', '少儿', '教育', '娱乐时尚', '文旅', 'iPanda',
   'B站', '抖音', '虎牙', '斗鱼',
 ]
@@ -56,14 +60,21 @@ const LOCAL_GROUP_NAMES = new Set([
   '沈阳', '南京', '青岛', '广州', '深圳', '福州', '厦门',
 ])
 
-// 景观 / 慢直播类分组：央视景观、北京景观、上海景观…以及吉林广电的「吉林风景」。
+// 景观 / 慢直播类分组：央视景观、北京景观、上海景观…吉林广电的「吉林风景」，以及市县台的「慢直播」。
 function isScenicGroup(name) {
-  return /景观|风景/.test(String(name || ''))
+  return /景观|风景|慢直播/.test(String(name || ''))
+}
+
+// 按地市拆开的省内分组（「山东-济南」）：前缀是省名
+function provinceOfSubgroup(name) {
+  const match = /^([^-]+)-./.exec(String(name || '').trim())
+  return match && LOCAL_GROUP_NAMES.has(match[1]) ? match[1] : ''
 }
 
 export function isLocalGroup(name) {
   const text = String(name || '').trim()
   if (/(?:电视台|地市台)$/.test(text)) return true
+  if (provinceOfSubgroup(text)) return true
   const bare = text.replace(/(?:电视台|地市台|频道)$/, '')
   return LOCAL_GROUP_NAMES.has(bare)
 }
@@ -76,8 +87,13 @@ export function isLocalGroup(name) {
  */
 export function sortGroupsByDefault(groups) {
   const priority = new Map(DEFAULT_GROUP_ORDER.map((name, index) => [name, index]))
+  const indexByName = new Map(groups.map((group, index) => [group?.name || '', index]))
   return [...groups]
-    .map((group, originalIndex) => ({ group, originalIndex }))
+    .map((group, originalIndex) => {
+      // 「山东-济南」这类省内分组紧跟在「山东」后面（同省的子分组之间保持来源顺序）
+      const parent = indexByName.get(provinceOfSubgroup(group?.name))
+      return { group, originalIndex: parent === undefined ? originalIndex : parent + (originalIndex + 1) / (groups.length + 1) }
+    })
     .sort((a, b) => {
       const nameA = a.group?.name || ''
       const nameB = b.group?.name || ''
@@ -146,10 +162,18 @@ function stripVolatileParams(url) {
   const query = hashAt === -1 ? url.slice(queryAt + 1) : url.slice(queryAt + 1, hashAt)
   const tail = hashAt === -1 ? '' : url.slice(hashAt)
 
+  // 格尔木、海东的官方直链使用 sign + t。t 是这两条入口的签名时效，
+  // 换签后频道身份不变；其它来源的 t 可能是台号，不能一起剥掉。
+  const signedTime = (head === 'https://miku-live-hls-gemwkl-tv.geermurmt.cn/gemwkl-tv/xwzh.m3u8'
+    || head === 'https://hls-hdapp.hdhhy.cn/ashh-tv/zhds.m3u8')
+    && /(?:^|&)sign=[a-f0-9]{32}(?:&|$)/i.test(query)
+    && /(?:^|&)t=\d{10}(?:&|$)/.test(query)
+
   const kept = query.split('&').filter(pair => {
     if (!pair) return false
     const eq = pair.indexOf('=')
-    return !VOLATILE_URL_PARAMS.test(eq === -1 ? pair : pair.slice(0, eq))
+    const key = eq === -1 ? pair : pair.slice(0, eq)
+    return !VOLATILE_URL_PARAMS.test(key) && !(signedTime && key === 't')
   })
 
   return kept.length ? `${head}?${kept.join('&')}${tail}` : `${head}${tail}`
@@ -219,9 +243,23 @@ export function saveConfig(profile, config) {
 }
 
 /**
+ * 取 EXTINF 行的频道名：引号外的第一个逗号之后。
+ * 属性值里可以有逗号（回看模板 `rrsip=A,rrsip=B`，issue #200；外部源频道名写进
+ * tvg-id="…"），按第一个逗号切会把属性残渣当成频道名。
+ */
+function extinfName(line) {
+  let quoted = false
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '"') quoted = !quoted
+    else if (line[i] === ',' && !quoted) return line.slice(i + 1)
+  }
+  return ''
+}
+
+/**
  * 解析 interface.txt 文件
  */
-export function parseInterfaceTxt() {
+export function parseInterfaceTxt({ forTxt = false } = {}) {
   try {
     const interfacePath = dataPath('interface.txt')
     if (!existsSync(interfacePath)) {
@@ -230,7 +268,7 @@ export function parseInterfaceTxt() {
     }
     
     const content = readFileSync(interfacePath, 'utf-8')
-    const lines = content.split('\n')
+    const lines = (forTxt ? content : markFengshowsLiveUrls(content)).split('\n')
     const groups = {}
     const playbackIds = getPlaybackChannelIds()   // 解析一次：用于逐频道判定有无节目单（issue #38）
 
@@ -251,16 +289,15 @@ export function parseInterfaceTxt() {
         const tvgLogoMatch = line.match(/tvg-logo="([^"]*)"/)
         const groupMatch = line.match(/group-title="([^"]*)"/)
         const sourceIdsMatch = line.match(/source-ids="([^"]*)"/)   // 源归属（issue #29/#68），内部属性
-        const liveOnly = /\bcatchup="none"/.test(line)
-        const nameMatch = line.match(/,(.+)$/)
-        
+        const catchup = parseCatchupAttrs(line)   // 频道级回看声明（issue #119 / #190）
+        const channelName = extinfName(line)
+
         // 播放地址不一定紧跟 EXTINF——防盗链频道中间夹着 #EXTVLCOPT，
         // 要连同 opts 一起收下，并把游标推到地址行，否则 opt 行会被当成播放地址。
         const { opts, urlIndex } = collectOptsUntilUrl(lines, i)
 
-        if (groupMatch && nameMatch && urlIndex !== -1) {
+        if (groupMatch && channelName && urlIndex !== -1) {
           const groupName = groupMatch[1]
-          const channelName = nameMatch[1]
           const url = lines[urlIndex].trim()
           
           const tvgName = tvgNameMatch ? tvgNameMatch[1] : channelName
@@ -294,9 +331,9 @@ export function parseInterfaceTxt() {
             url: url,
             originalGroup: groupName,
             // 源归属（issue #29/#68 按档过滤）：来自哪些源（migu / bi:<id> / ext:<id>，去重并集）。
-            // 分号分隔（属性值不能含逗号——频道名按第一个逗号解析）；旧数据无该属性 → 空数组=不过滤。
+            // 分号分隔（见 updateData 写入处）；旧数据无该属性 → 空数组=不过滤。
             sourceIds: sourceIdsMatch ? sourceIdsMatch[1].split(';').filter(Boolean) : [],
-            ...(liveOnly ? { catchup: 'none' } : {}),
+            ...catchup,
             // 频道级播放选项（#EXTVLCOPT）：无则不带该字段，保持旧频道对象形状不变
             ...(opts.length ? { opts } : {})
           })
@@ -573,6 +610,16 @@ export function applyConfig(groups, config) {
           const bilibili = config.groupOrder.indexOf('B站')
           if (bilibili !== -1) return bilibili + 0.5
         }
+        // 「赛事直播」是后来新增的；旧配置档没记录它时跟在体育几组后面
+        if (direct === -1 && name === '赛事直播') {
+          const sports = Math.max(...SPORTS_GROUPS.map(group => config.groupOrder.indexOf(group)))
+          if (sports !== -1) return sports + 0.5
+        }
+        // 「山东-济南」这类省内分组没记录过时跟在该省后面（同值靠稳定排序保持默认顺序）
+        if (direct === -1 && provinceOfSubgroup(name)) {
+          const province = config.groupOrder.indexOf(provinceOfSubgroup(name))
+          if (province !== -1) return province + 0.5
+        }
         return direct
       }
       result.sort((a, b) => {
@@ -640,7 +687,7 @@ export function generateM3u8(groups) {
   
   groups.forEach(group => {
     group.channels.forEach(channel => {
-      const catchupAttr = channel.catchup === 'none' ? ' catchup="none"' : ''
+      const catchupAttr = renderCatchupAttrs(channel)
       content += `#EXTINF:-1 tvg-id="${channel.tvgId}" tvg-name="${channel.tvgName}" tvg-logo="${channel.logo}"${catchupAttr} group-title="${group.name}",${channel.name}\n`
       // 防盗链频道的请求头必须夹在 EXTINF 和地址之间；无 opts 时为空串，输出不变
       content += renderOpts(channel.opts)

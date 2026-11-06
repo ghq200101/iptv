@@ -1,17 +1,39 @@
-// 从矢量母版生成标签页、收藏夹与主屏幕图标：node scripts/generate-icons.mjs
+// 从新版品牌 PNG 生成标签页、收藏夹与主屏幕图标：node scripts/generate-icons.mjs
 // 可用 PUPPETEER_EXECUTABLE_PATH 指定本机 Chrome，不需要新增运行依赖。
 import { readFileSync, writeFileSync } from 'node:fs'
 import puppeteer from 'puppeteer'
 
 const directory = new URL('../web/icons/', import.meta.url)
-const svg = readFileSync(new URL('favicon.svg', directory), 'utf8')
+const source = readFileSync(new URL('brand-logo.png', directory)).toString('base64')
 const browser = await puppeteer.launch({ headless: true })
 try {
   const page = await browser.newPage()
   async function render(size, appearance = 'light') {
     await page.setViewport({ width: size, height: size, deviceScaleFactor: 1 })
     await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: appearance }])
-    await page.setContent(`<style>html,body{margin:0;background:transparent}svg{display:block;width:100vw;height:100vh}</style>${svg}`)
+    await page.setContent(`<style>html,body{margin:0;background:transparent}canvas{display:block}</style><canvas width="${size}" height="${size}"></canvas>`)
+    await page.evaluate(async ({ source, size }) => {
+      const image = new Image()
+      image.src = `data:image/png;base64,${source}`
+      await image.decode()
+      const sourceCanvas = document.createElement('canvas')
+      sourceCanvas.width = image.width
+      sourceCanvas.height = image.height
+      const ctx = sourceCanvas.getContext('2d')
+      ctx.drawImage(image, 0, 0)
+      const pixels = ctx.getImageData(0, 0, image.width, image.height).data
+      let left = image.width, top = image.height, right = 0, bottom = 0
+      for (let y = 0; y < image.height; y++) for (let x = 0; x < image.width; x++) {
+        if (pixels[(y * image.width + x) * 4 + 3] > 16) {
+          left = Math.min(left, x); top = Math.min(top, y)
+          right = Math.max(right, x); bottom = Math.max(bottom, y)
+        }
+      }
+      const edge = Math.max(right - left + 1, bottom - top + 1)
+      const output = document.querySelector('canvas').getContext('2d')
+      output.imageSmoothingQuality = 'high'
+      output.drawImage(image, (left + right + 1 - edge) / 2, (top + bottom + 1 - edge) / 2, edge, edge, 0, 0, size, size)
+    }, { source, size })
     return Buffer.from(await page.screenshot({ type: 'png', omitBackground: true }))
   }
 

@@ -24,11 +24,13 @@ console.log('默认分组顺序测试')
 check('内容类按固定顺序置顶，不受来源顺序影响', () => {
   const shuffled = [
     '斗鱼', '卫视', '体育-明天', '国际', '公告', '体育', 'B站', '央视频', '央视',
-    '少儿', '文旅', 'iPanda', '体育-昨天', '亚太', '娱乐时尚', '虎牙', '抖音', '影视', '教育', '体育-今天',
+    '少儿', '文旅', 'iPanda', '体育-昨天', '亚太', '娱乐时尚', '虎牙', '抖音', '影视', '教育', '体育-今天', '赛事直播',
   ]
   assert.deepEqual(sortGroupsByDefault(makeGroups(shuffled)).map(group => group.name), DEFAULT_GROUP_ORDER)
   // 央视频排在咪咕的央视、卫视之后作备用（官方线路起播慢），体育紧跟公告
   assert.equal(DEFAULT_GROUP_ORDER.indexOf('体育'), DEFAULT_GROUP_ORDER.indexOf('公告') + 1)
+  assert.equal(DEFAULT_GROUP_ORDER.indexOf('赛事直播'), DEFAULT_GROUP_ORDER.indexOf('体育-明天') + 1)
+  assert.equal(DEFAULT_GROUP_ORDER.indexOf('央视'), DEFAULT_GROUP_ORDER.indexOf('赛事直播') + 1)
   assert.equal(DEFAULT_GROUP_ORDER.indexOf('卫视'), DEFAULT_GROUP_ORDER.indexOf('央视') + 1)
   assert.equal(DEFAULT_GROUP_ORDER.indexOf('央视频'), DEFAULT_GROUP_ORDER.indexOf('卫视') + 1)
   assert.equal(DEFAULT_GROUP_ORDER.indexOf('iPanda'), DEFAULT_GROUP_ORDER.indexOf('文旅') + 1)
@@ -45,6 +47,21 @@ check('旧配置档中新抖音组紧跟 B 站，显式拖拽后尊重用户位�
   assert.deepEqual(explicit.map(group => group.name), ['斗鱼', '抖音', 'B站', '虎牙'])
 })
 
+check('旧配置未记录赛事直播时跟在体育几组后面，显式拖拽后尊重用户位置', () => {
+  const groups = makeGroups(['赛事直播', '央视', '体育', '体育-今天', '广东'])
+  const legacy = applyConfig(groups, { ...baseConfig(), groupOrder: ['体育', '体育-今天', '央视', '广东'] })
+  assert.deepEqual(legacy.map(group => group.name), ['体育', '体育-今天', '赛事直播', '央视', '广东'])
+
+  const onlySports = applyConfig(makeGroups(['赛事直播', '央视', '体育']), { ...baseConfig(), groupOrder: ['央视', '体育'] })
+  assert.deepEqual(onlySports.map(group => group.name), ['央视', '体育', '赛事直播'], '体育被用户拖到后面时跟着体育走')
+
+  const noSports = applyConfig(makeGroups(['赛事直播', '央视', '广东']), { ...baseConfig(), groupOrder: ['广东', '央视'] })
+  assert.deepEqual(noSports.map(group => group.name), ['广东', '央视', '赛事直播'], '没有体育组时排在已保存顺序之后')
+
+  const explicit = applyConfig(groups, { ...baseConfig(), groupOrder: ['赛事直播', '广东', '央视', '体育', '体育-今天'] })
+  assert.deepEqual(explicit.map(group => group.name), ['赛事直播', '广东', '央视', '体育', '体育-今天'])
+})
+
 check('地方台连续置底（排在其他分组之后），并保持原相对顺序', () => {
   const names = ['广东', '自定义', '体育', '地方', '福建地市台', '辽宁', '文旅', '宁夏电视台']
   assert.deepEqual(
@@ -53,11 +70,11 @@ check('地方台连续置底（排在其他分组之后），并保持原相对�
   )
 })
 
-check('景观慢直播贴在地方台上方（含「风景」命名），并保持原相对顺序', () => {
-  const names = ['上海景观', '广东', '青岛景观', '其他', '吉林风景', '南京景观', '央视']
+check('景观慢直播贴在地方台上方（含「风景」「慢直播」命名），并保持原相对顺序', () => {
+  const names = ['上海景观', '广东', '慢直播', '青岛景观', '其他', '吉林风景', '南京景观', '央视']
   assert.deepEqual(
     sortGroupsByDefault(makeGroups(names)).map(group => group.name),
-    ['央视', '其他', '上海景观', '青岛景观', '吉林风景', '南京景观', '广东'],
+    ['央视', '其他', '上海景观', '慢直播', '青岛景观', '吉林风景', '南京景观', '广东'],
   )
 })
 
@@ -135,6 +152,19 @@ check('旧配置未记录 iPanda 时自动紧跟文旅，显式拖拽后尊重�
     groupOrder: ['iPanda', '体育', '文旅', 'B站'],
   })
   assert.deepEqual(explicit.map(group => group.name), ['iPanda', '体育', '文旅', 'B站'])
+})
+
+check('省内按地市拆的分组（山东-济南）算地方台，紧跟该省；旧配置没记录时也跟在该省后', () => {
+  const names = ['山东-济南', '江苏', '体育', '山东', '山东-潍坊', '国际', '河南']
+  assert.deepEqual(
+    sortGroupsByDefault(makeGroups(names)).map(group => group.name),
+    ['体育', '国际', '江苏', '山东', '山东-济南', '山东-潍坊', '河南'],
+  )
+  // 前缀不是省名的不算（「体育-今天」照旧按内容类排）
+  assert.deepEqual(sortGroupsByDefault(makeGroups(['山东', '体育-今天'])).map(group => group.name), ['体育-今天', '山东'])
+
+  const legacy = applyConfig(makeGroups(names), { ...baseConfig(), groupOrder: ['体育', '山东', '江苏', '国际', '河南'] })
+  assert.deepEqual(legacy.map(group => group.name), ['体育', '山东', '山东-济南', '山东-潍坊', '江苏', '国际', '河南'])
 })
 
 console.log(`\n全部通过：${passed}/${passed} ✅`)

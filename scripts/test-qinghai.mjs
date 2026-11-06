@@ -19,6 +19,7 @@ import {
 } from '../extractors/qinghai/api.js'
 import { QHBTV_COMPANY_ID, QHBTV_H5_PAGE, QHTB_TV_PAGE, SITE_APP_SECRET } from '../extractors/qinghai/channels.js'
 import qinghaiEpg from '../extractors/qinghai/epg.js'
+import { LOCAL_CHANNELS, buildLocalChannels } from '../extractors/qinghai/local.js'
 import { getModule, resolverFor } from '../extractors/registry.js'
 
 let passed = 0
@@ -120,18 +121,18 @@ const site = ({
 
 console.log('青海模块测试')
 
-check('模块注册为免账号的青海 relay 模块，节目单只挂青海卫视', () => {
+check('青海省台中继、地方台直连，节目单只挂青海卫视', () => {
   assert.equal(getModule('qinghai'), qinghai)
   assert.equal(qinghai.name, '青海')
   assert.equal(qinghai.outputGroupName, '青海')
-  assert.equal(qinghai.channelHlsMode, 'relay')
+  assert.equal(qinghai.channelHlsMode, undefined, '省台的中继不能盖到地方直链上')
   assert.equal(qinghai.relayProxyCompatible, true)
   assert.equal(qinghai.capabilities.catchup, false)
   assert.equal(qinghai.capabilities.epg, true)
   assert.equal(qinghai.epg, qinghaiEpg)
   assert.deepEqual(qinghaiEpg.channels(), [{ ref: 'qinghai-qhws', name: '青海卫视', key: 'qinghai' }],
     '平台节目单只有整点占位，青海卫视取央视网')
-  assert.equal(qinghai.catalogVersion, 2)
+  assert.equal(qinghai.catalogVersion, 3)
   assert.deepEqual(qinghai.configSchema, [])
   assert.equal(resolverFor('qinghai-amdo'), qinghai)
   assert.equal(resolverFor('qinghai-qhws'), qinghai)
@@ -148,19 +149,28 @@ await checkAsync('长云网三台加安多卫视；安多卫视台标用频道�
   ])
   const channels = buildChannels()
   const plain = (name, deferredRef) => ({
-    name, deferredRef, groupTitle: '青海', opts: ['network-caching=3000'], catchup: 'none',
+    name, deferredRef, relayHls: true, groupTitle: '青海', opts: ['network-caching=3000'], catchup: 'none',
   })
   assert.deepEqual(channels, [plain('青海卫视', 'qinghai-qhws'), {
     name: '安多卫视',
     deferredRef: 'qinghai-amdo',
+    relayHls: true,
     // 与 api/topic/detail 的 indexpic 同一地址
     logo: 'https://filestorage.qhbtv.com.cn/file/storage1-cloudlivemanage/cloudlivemanage/2025/1077/4ab9f3d8036d2c9b.png',
     groupTitle: '青海',
     opts: ['network-caching=3000'],
     catchup: 'none',
   }, plain('青海经济生活', 'qinghai-qhsh'), plain('青海都市', 'qinghai-qhds')])
-  assert.deepEqual(await qinghai.fetch(), {
-    groups: [{ name: '青海', dataList: channels }],
+  const fetchImpl = async url => {
+    const local = LOCAL_CHANNELS.find(item => item.api === String(url))
+    assert.ok(local, '只请求两家地方台自己的频道接口')
+    return json({ code: 200, data: { channel_info: [{
+      id: 1, channel_type: 1, name: local.rawName, stream_key: local.streamKey,
+      m3u8: local.fallbackUrl, mark_img: local.fallbackLogo,
+    }] } })
+  }
+  assert.deepEqual(await qinghai.fetch({}, { fetchImpl }), {
+    groups: [{ name: '青海', dataList: [...channels, ...buildLocalChannels()] }],
     meta: { skipped: [], warnings: [] },
   })
   assert.equal(claimsRef('qinghai-amdo'), true)

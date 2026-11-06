@@ -9,6 +9,7 @@ export default {
   capabilities: { cache: 'disk', resolve: true, epg: false, catchup: false },
   catalogVersion: 1,
   outputGroupName: 'iPanda',
+  region: 'iPanda',
   defaultRefreshMinutes: 1440,
   refreshConfigurable: false,
   refreshDescription: '频道表随模块版本更新；18 路固定机位直连，4 路动态频道播放时检查状态并自动切换官方 CDN。',

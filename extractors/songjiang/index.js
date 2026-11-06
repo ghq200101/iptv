@@ -7,6 +7,7 @@ export default {
   description: '上海松江客户端「松江融媒慢直播」，官方多机位画面按节目编排滚动切换。',
   capabilities: { cache: 'disk', resolve: true, epg: false },
   outputGroupName: '上海景观',
+  region: '上海',
   defaultRefreshMinutes: 10,
   refreshConfigurable: false,
   refreshDescription: '自动管理：每 10 分钟读取官方场景清单并更新慢直播地址；仅中转 HLS 清单。',

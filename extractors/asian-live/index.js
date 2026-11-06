@@ -6,6 +6,7 @@ import epg from './epg.js'
 export default {
   id: 'asian-live',
   name: '亚洲与国际直播',
+  region: '国际',
   description: `来自独立实验台验证的 ${SOURCES.length} 个公开直播频道（YTN、NHK World、CNA、France 24 English / Français、World Poker Tour），播放时从最高画质起播；其余固定直连源由内置 IPTV.m3u 提供。`,
   capabilities: { cache: 'disk', resolve: true, epg: true, catchup: false },
   // v1：频道表补上官方台标。此前未声明，老缓存没有版本号，启动时会按新表重建一次

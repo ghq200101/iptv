@@ -313,6 +313,7 @@ export function buildChannels() {
   return CHANNELS.map(channel => ({
     name: channel.name,
     deferredRef: channel.ref,
+    relayHls: true,
     // 留空的由内置台标库补（见 channels.js）
     ...(channel.logo ? { logo: channel.logo } : {}),
     groupTitle: '青海',

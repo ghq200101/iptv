@@ -1,0 +1,859 @@
+[
+  {
+    "tagName": "上海",
+    "items": [
+      {
+        "id": 36,
+        "name": "新闻综合",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/ab52e8f799789.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 39,
+        "name": "都市频道",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20210907/74c29241a5350.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 17,
+        "name": "第一财经",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/b20fb6a478e60.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 227,
+        "name": "东方财经",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/bc5643921c85f.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 230,
+        "name": "生活时尚",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/a0bdbb056bb1b.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 220,
+        "name": "都市剧场",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230210/361a22bfa7166.jpg",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 7003,
+        "name": "七彩戏剧",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20240806/f02282b83ba50.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      }
+    ]
+  },
+  {
+    "tagName": "正在直播",
+    "items": [
+      {
+        "id": 36,
+        "name": "新闻综合",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/ab52e8f799789.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 39,
+        "name": "都市频道",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20210907/74c29241a5350.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 17,
+        "name": "第一财经",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/b20fb6a478e60.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 227,
+        "name": "东方财经",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/bc5643921c85f.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 230,
+        "name": "生活时尚",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/a0bdbb056bb1b.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 180,
+        "name": "湖南卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/1a9937793603b.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 196,
+        "name": "北京卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/d481f4ef1db9b.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 182,
+        "name": "浙江卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/ebb4df764cb82.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 185,
+        "name": "山东卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/0c8305397f34a.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 181,
+        "name": "江苏卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/d2ad577a4b3ff.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 189,
+        "name": "贵州卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/0cfb0326c53ff.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 186,
+        "name": "湖北卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/8fc83e3dc0da4.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 187,
+        "name": "深圳卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/593542e07288a.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 191,
+        "name": "天津卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/d074e0bc93910.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 195,
+        "name": "重庆卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20240112/a3ec1e28663b7.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 190,
+        "name": "安徽卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220824/0d33b0381f959.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 192,
+        "name": "四川卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/5c5a0bb626c1e.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 198,
+        "name": "河南卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/1864871b6c057.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 210,
+        "name": "吉林卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/efcf3b9d1e7d6.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 197,
+        "name": "云南卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/787e413e43302.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 194,
+        "name": "辽宁卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/d7735d81daf95.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 188,
+        "name": "黑龙江卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/3e6959444eef2.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 155,
+        "name": "东南卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/bdbad2d224c03.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 200,
+        "name": "广西卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/797c556265429.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 199,
+        "name": "海南卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/39bb83b4e2bdc.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 183,
+        "name": "河北卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/7fc664a3979af.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 193,
+        "name": "江西卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220824/cf9fc11438763.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 213,
+        "name": "内蒙古卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/c76be0f383c83.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 211,
+        "name": "山西卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/bd8bc4f96bac7.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 184,
+        "name": "广东卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/3a1d63852ab5c.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 202,
+        "name": "青海卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/8fa7cc5b8ec88.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 212,
+        "name": "甘肃卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/6125208e57461.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 203,
+        "name": "宁夏卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/1ce7ca3cb8c93.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 215,
+        "name": "兵团卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/c86f4064e6c0a.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 201,
+        "name": "陕西卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/6acbee88f47c3.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 209,
+        "name": "卡酷少儿",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/6c4ee3cbd3129.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 208,
+        "name": "金鹰卡通",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/fbd7ab7bf6092.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 216,
+        "name": "西藏卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/76d209cc26bf1.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 157,
+        "name": "福建新闻",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230209/4fd072236177c.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 220,
+        "name": "都市剧场",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230210/361a22bfa7166.jpg",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 900,
+        "name": "长沙新闻频道",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20231113/591b417d38d12.jpg",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      }
+    ]
+  },
+  {
+    "tagName": "上海直播间",
+    "items": [
+      {
+        "id": 36,
+        "name": "新闻综合",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/ab52e8f799789.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 39,
+        "name": "都市频道",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20210907/74c29241a5350.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 17,
+        "name": "第一财经",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/b20fb6a478e60.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 227,
+        "name": "东方财经",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/bc5643921c85f.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 230,
+        "name": "生活时尚",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/a0bdbb056bb1b.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 157,
+        "name": "福建新闻",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230209/4fd072236177c.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 220,
+        "name": "都市剧场",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230210/361a22bfa7166.jpg",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 7003,
+        "name": "七彩戏剧",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20240806/f02282b83ba50.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      }
+    ]
+  },
+  {
+    "tagName": "特色",
+    "items": [
+      {
+        "id": 227,
+        "name": "东方财经",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/bc5643921c85f.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 220,
+        "name": "都市剧场",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230210/361a22bfa7166.jpg",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      }
+    ]
+  },
+  {
+    "tagName": "卫视",
+    "items": [
+      {
+        "id": 180,
+        "name": "湖南卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/1a9937793603b.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 196,
+        "name": "北京卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/d481f4ef1db9b.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 182,
+        "name": "浙江卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/ebb4df764cb82.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 185,
+        "name": "山东卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/0c8305397f34a.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 181,
+        "name": "江苏卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/d2ad577a4b3ff.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 189,
+        "name": "贵州卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/0cfb0326c53ff.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 186,
+        "name": "湖北卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/8fc83e3dc0da4.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 187,
+        "name": "深圳卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/593542e07288a.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 191,
+        "name": "天津卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/d074e0bc93910.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 195,
+        "name": "重庆卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20240112/a3ec1e28663b7.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 190,
+        "name": "安徽卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220824/0d33b0381f959.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 192,
+        "name": "四川卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/5c5a0bb626c1e.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 198,
+        "name": "河南卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/1864871b6c057.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 210,
+        "name": "吉林卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/efcf3b9d1e7d6.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 197,
+        "name": "云南卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/787e413e43302.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 194,
+        "name": "辽宁卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/d7735d81daf95.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 188,
+        "name": "黑龙江卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/3e6959444eef2.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 155,
+        "name": "东南卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/bdbad2d224c03.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 200,
+        "name": "广西卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/797c556265429.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 199,
+        "name": "海南卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/39bb83b4e2bdc.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 183,
+        "name": "河北卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/7fc664a3979af.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 193,
+        "name": "江西卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220824/cf9fc11438763.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 213,
+        "name": "内蒙古卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/c76be0f383c83.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 211,
+        "name": "山西卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/bd8bc4f96bac7.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 184,
+        "name": "广东卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/3a1d63852ab5c.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 202,
+        "name": "青海卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/8fa7cc5b8ec88.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 212,
+        "name": "甘肃卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/6125208e57461.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 203,
+        "name": "宁夏卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/1ce7ca3cb8c93.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 215,
+        "name": "兵团卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/c86f4064e6c0a.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 201,
+        "name": "陕西卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/6acbee88f47c3.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 209,
+        "name": "卡酷少儿",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/6c4ee3cbd3129.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 208,
+        "name": "金鹰卡通",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/fbd7ab7bf6092.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      },
+      {
+        "id": 216,
+        "name": "西藏卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230327/76d209cc26bf1.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      }
+    ]
+  },
+  {
+    "tagName": "苏州直播间",
+    "items": [
+      {
+        "id": 181,
+        "name": "江苏卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/d2ad577a4b3ff.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      }
+    ]
+  },
+  {
+    "tagName": "深圳",
+    "items": [
+      {
+        "id": 187,
+        "name": "深圳卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/593542e07288a.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      }
+    ]
+  },
+  {
+    "tagName": "深圳直播间",
+    "items": [
+      {
+        "id": 187,
+        "name": "深圳卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230215/593542e07288a.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      }
+    ]
+  },
+  {
+    "tagName": "河北直播间",
+    "items": [
+      {
+        "id": 183,
+        "name": "河北卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/7fc664a3979af.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      }
+    ]
+  },
+  {
+    "tagName": "河北",
+    "items": [
+      {
+        "id": 183,
+        "name": "河北卫视",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20220825/7fc664a3979af.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      }
+    ]
+  },
+  {
+    "tagName": "福建",
+    "items": [
+      {
+        "id": 157,
+        "name": "福建新闻",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20230209/4fd072236177c.png",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      }
+    ]
+  },
+  {
+    "tagName": "长沙",
+    "items": [
+      {
+        "id": 900,
+        "name": "长沙新闻频道",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20231113/591b417d38d12.jpg",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      }
+    ]
+  },
+  {
+    "tagName": "长沙直播间",
+    "items": [
+      {
+        "id": 900,
+        "name": "长沙新闻频道",
+        "icon": "https://tvappstatic.bestv.com.cn/images/20231113/591b417d38d12.jpg",
+        "enabled": 1,
+        "mode": "live",
+        "audio": 0
+      }
+    ]
+  }
+]

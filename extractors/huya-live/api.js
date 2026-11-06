@@ -2,12 +2,24 @@
 import { createHash } from 'node:crypto'
 import fetch from 'node-fetch'
 import { printYellow } from '../../utils/colorOut.js'
+import { qualityFrom } from '../../utils/qualityOverride.js'
+import { isWatchTogetherFilm } from '../watchTogether.js'
 
 export const HUYA_GROUP = '虎牙'
 export const REFERER = 'https://www.huya.com/'
 export const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
   + '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 export const DEFAULT_MIN_HEAT = 3000
+export const DEFAULT_QUALITY = 2000
+// 后台下拉框与播放地址 ?quality= 共用这一份档位表
+export const QUALITY_OPTIONS = Object.freeze([
+  { value: 0, label: '原画 / 最高画质' },
+  { value: 20000, label: '4K' },
+  { value: 14000, label: '2K' },
+  { value: 4000, label: '蓝光 4M' },
+  { value: 2000, label: '超清 2M（推荐）' },
+  { value: 500, label: '流畅 500K' },
+])
 
 export const AREA_PAGES = Object.freeze({
   赛事: 'https://www.huya.com/m',
@@ -15,6 +27,7 @@ export const AREA_PAGES = Object.freeze({
   手游: 'https://www.huya.com/g/100004',
   单机: 'https://www.huya.com/g/100002',
   娱乐: 'https://www.huya.com/g/100022',
+  一起看: 'https://www.huya.com/g/2135',
 })
 
 const RESOLVE_TTL_MS = 60 * 1000          // 房间页与签名地址复用时长
@@ -22,8 +35,12 @@ const LINE_REJECT_MS = 5 * 60 * 1000      // 被 CDN 拒绝的线路冷却时长
 const ROOM_RETRY_MS = 10 * 1000           // 所有线路都被拒后，多久再去试一轮；连续失败逐次翻倍
 const ROOM_RETRY_MAX_MS = 2 * 60 * 1000
 const MANIFEST_TIMEOUT_MS = 8000
-const roomCache = new Map()      // room:quality -> { expiresAt, name, presenterUid, bitrate, lines, signed }
+// 房间页给的 wsTime 是签名到期时刻（约取页后 5 分钟）。复用的签名到期前后被拒才重签；
+// 没到期就被拒是线路在拒这个出口（AL 线路有过「新签名首取放行、再取就拒」），重签只会越签越被拒，直接换线
+const SESSION_EXPIRY_MARGIN_MS = 30 * 1000
+const roomCache = new Map()      // room:quality -> { expiresAt, name, presenterUid, bitrate, lines }
 const roomPending = new Map()
+const lineSessions = new Map()   // room:quality -> Map<cdn, { url, streamName, base, bitrate, signedAt, expiresAt }>：播放期间一直复用的签名地址
 const rejectedLines = new Map()  // room -> Map<cdn, until>
 const preferredLine = new Map()  // room -> 上次能播的线路
 const roomFailUntil = new Map()  // room -> { until, desc, streak }
@@ -35,10 +52,23 @@ export class HuyaError extends Error {
   }
 }
 
-export class HuyaOfflineError extends HuyaError {
+/**
+ * 房间号不存在或已注销（多半是填错了）。和「未开播」一样只记提示、跳过不列，
+ * 不算这一轮真出错：否则填错一个、其余主播又都没开播时整轮判失败，正确房间的「未开播」也出不来。
+ */
+export class HuyaRoomMissingError extends HuyaError {
   constructor(message) {
     super(message)
+    this.name = 'HuyaRoomMissingError'
+  }
+}
+
+export class HuyaOfflineError extends HuyaError {
+  /** room：未开播房间的主播名和头像，手动房间靠它照样列出频道。 */
+  constructor(message, room = null) {
+    super(message)
     this.name = 'HuyaOfflineError'
+    this.room = room
   }
 }
 
@@ -242,7 +272,31 @@ export async function topRoomsOfArea(areaName, limit, options = {}) {
   if (!url) throw new HuyaError(`未知分类「${areaName}」`)
   const html = await fetchText(url, options)
   const rooms = areaName === '赛事' ? parseEventRooms(html) : parseCategoryRooms(html)
-  return selectTopRooms(rooms, limit, options.minHeat)
+  const candidates = areaName === '一起看' ? rooms.filter(room => isWatchTogetherFilm('huya', room, room.game)) : rooms
+  return selectTopRooms(candidates, limit, options.minHeat)
+}
+
+/**
+ * 未开播时播放器配置里没有流，主播昵称和头像只在 TT_PROFILE_INFO。房间号不存在的页面
+ * 同样没有流，但这份资料是空的（profileRoom 为 0）——要和「未开播」分开，免得填错的房间号被列出来。
+ */
+function offlineRoom(html, requestedRoom) {
+  let profile
+  try { profile = extractAssignedJson(html, 'var TT_PROFILE_INFO') } catch {
+    // 页面改版找不到这份资料：退回只报未开播、不列出
+    return new HuyaOfflineError(`虎牙房间 ${requestedRoom || ''} 当前未开播`.trim())
+  }
+  const nick = decodeHtml(profile?.nick).trim()
+  const profileRoom = String(profile?.profileRoom || '')
+  if (!nick || !/^[1-9]\d*$/.test(profileRoom)) {
+    return new HuyaRoomMissingError(`虎牙房间 ${requestedRoom || ''} 不存在或已注销`.trim())
+  }
+  return new HuyaOfflineError(`虎牙房间 ${requestedRoom || ''} 当前未开播`.trim(), {
+    roomId: normalizeRoom(profileRoom),
+    nick,
+    logo: normalizeImage(profile.avatar),
+    offline: true,
+  })
 }
 
 /** 只截取 hyPlayerConfig.stream；外层是 JS 对象，不是严格 JSON。 */
@@ -255,7 +309,7 @@ export function parseRoomPage(html, requestedRoom = '') {
   const stream = extractAssignedJson(html, streamMarker[0], markerAt)
   const rows = Array.isArray(stream?.data) ? stream.data : []
   const row = rows.find(item => Array.isArray(item?.gameStreamInfoList) && item.gameStreamInfoList.length)
-  if (!row) throw new HuyaOfflineError(`虎牙房间 ${requestedRoom || ''} 当前未开播`.trim())
+  if (!row) throw offlineRoom(html, requestedRoom)
   const info = row.gameLiveInfo || {}
   const roomId = normalizeRoom(info.profileRoom || requestedRoom || info.uid)
   return {
@@ -276,13 +330,27 @@ export async function fetchRoom(roomRef, options = {}) {
   return parseRoomPage(html, room)
 }
 
+// 赛事房间在原画之上还挂着 2K（14000）、4K（20000）转码档，不登录也能取，原画本身
+// 多为 1080P。HDR 档（iCompatibleFlag 非 0，如 14100、4200）HLS 取不到，一律跳过。
+const HIGH_RES_MIN = 10000
+
+function bitrateLabel(rate) {
+  if (rate >= 20000) return '4K'
+  if (rate >= HIGH_RES_MIN) return '2K'
+  return rate ? `${rate}K` : '原画'
+}
+
 export function selectBitrate(rows, requested = 2000) {
   const wanted = Math.max(0, Number(requested) || 0)
-  if (wanted === 0) return 0
   const rates = [...new Set((Array.isArray(rows) ? rows : [])
+    .filter(row => !Number(row?.iCompatibleFlag))
     .map(row => Number(row?.iBitRate))
     .filter(rate => Number.isFinite(rate) && rate > 0))]
     .sort((a, b) => b - a)
+  // 0 = 最高画质：有 2K/4K 就取最高的那档，没有就是原画（不带 ratio）
+  if (wanted === 0) return rates[0] >= HIGH_RES_MIN ? rates[0] : 0
+  // 要 2K/4K 但房间没有：退回原画，别掉到比原画还低的 8M/4M
+  if (wanted >= HIGH_RES_MIN) return rates.find(rate => rate >= HIGH_RES_MIN && rate <= wanted) || 0
   if (!rates.length) return wanted
   return rates.find(rate => rate <= wanted) || rates[rates.length - 1]
 }
@@ -401,7 +469,7 @@ async function loadRoom(room, quality, ctx) {
         .filter(item => item?.sHlsUrl && item?.sHlsAntiCode)
         .map((stream, index) => ({ cdn: String(stream.sCdnType || `line${index + 1}`), stream }))
       if (!lines.length) throw new HuyaError(`虎牙房间 ${room} 当前没有 HLS 流`)
-      const entry = { expiresAt: now + RESOLVE_TTL_MS, name: data.name, presenterUid: data.presenterUid, bitrate, lines, signed: new Map() }
+      const entry = { expiresAt: now + RESOLVE_TTL_MS, name: data.name, presenterUid: data.presenterUid, bitrate, lines }
       roomCache.set(key, entry)
       return entry
     })().finally(() => {
@@ -412,13 +480,40 @@ async function loadRoom(room, quality, ctx) {
   return pending
 }
 
-function signedLineUrl(entry, line, now) {
-  let url = entry.signed.get(line.cdn)
-  if (!url) {
-    url = signHlsUrl(line.stream, entry.presenterUid, entry.bitrate, now)
-    entry.signed.set(line.cdn, url)
+function sessionsOf(key) {
+  let map = lineSessions.get(key)
+  if (!map) {
+    map = new Map()
+    lineSessions.set(key, map)
   }
-  return url
+  return map
+}
+
+/**
+ * 一条线路的签名地址在整个播放期间复用，不随 60 秒一次的房间页刷新重签。
+ * 实测（2026-10-24）：CDN 按「出口 IP + 流 + u」记会话，同一条流短时间内换上第 3 个 seqid 前后
+ * 就把整条线路拒掉几分钟（固定一个签名地址连拉 5 分钟 0 拒）；之前每分钟重签正是断流的根因。
+ * 只有流本身变了（主播重开、换地址、换档）才签新的；签名被拒时由 resolveFresh 决定重签还是换线。
+ */
+function lineSession(entry, key, line, now, { fresh = false } = {}) {
+  const sessions = sessionsOf(key)
+  const streamName = String(line.stream?.sStreamName || '')
+  const base = String(line.stream?.sHlsUrl || '')
+  const current = sessions.get(line.cdn)
+  if (!fresh && current && current.streamName === streamName && current.base === base && current.bitrate === entry.bitrate) {
+    return { ...current, reused: true }
+  }
+  const wsTime = parseInt(new URLSearchParams(String(line.stream?.sHlsAntiCode || '')).get('wsTime') || '', 16)
+  const session = {
+    url: signHlsUrl(line.stream, entry.presenterUid, entry.bitrate, now),
+    streamName,
+    base,
+    bitrate: entry.bitrate,
+    signedAt: now,
+    expiresAt: Number.isFinite(wsTime) ? wsTime * 1000 : 0,
+  }
+  sessions.set(line.cdn, session)
+  return { ...session, reused: false }
 }
 
 function rejectLine(room, cdn, now) {
@@ -441,49 +536,68 @@ export function orderLines(lines, preferred, rejected, now) {
 }
 
 /**
- * 实测（2026-10-09）：房间页首选的 AL 线路播两三分钟后会对同一出口整条 403，之后续签照样被拒，
+ * 实测（2026-10-09）：房间页首选的 AL 线路播两三分钟后会对同一出口整条 403，
  * 而同一房间页里的其它线路从同一出口仍然能播；TX 线路还出现过「清单 200、分片 403」。
- * 所以每次播放请求都由这里取回清单：清单被拒就立刻换下一条线路并把被拒线路冷却 5 分钟，
- * 新换上的线路先探一片分片再交给播放器；清单直接随结果交回，本机中继不必再取一次。
+ * 2026-10-24 查明被拒的根因是每分钟重签（见 lineSession），签名地址改为播放期间复用。
+ * 每次播放请求都由这里取回清单：到期（wsTime）的签名被拒先在同一线路重签一次，
+ * 再被拒、或没到期的签名被拒都算线路被拒——立刻换下一条线路并把被拒线路冷却 5 分钟；刚签出来的地址先探一片分片
+ * 再交给播放器；清单直接随结果交回，本机中继不必再取一次。
  */
+async function tryLine(url, probe, options) {
+  const manifest = await fetchManifest(url, options)
+  if (manifest.status !== 200) return { reason: `清单 HTTP ${manifest.status}`, status: manifest.status }
+  if (!manifest.text.trimStart().startsWith('#EXTM3U')) return { reason: '清单不是 HLS' }
+  if (probe) {
+    const segment = lastSegmentUrl(manifest.text, manifest.finalUrl)
+    const status = segment ? await probeSegment(segment, options) : 200
+    if (status !== 200) return { reason: `分片 HTTP ${status}`, status }
+  }
+  return { manifest }
+}
+
 async function resolveFresh(room, ctx) {
   const now = Number(ctx.now ?? Date.now())
-  const quality = Number(ctx.config?.quality ?? 2000)
+  const quality = qualityFrom(ctx, QUALITY_OPTIONS, DEFAULT_QUALITY)
   // 整个房间刚被判定全线不可用：短时间内直接回同一结论，别替播放器的连环重试去打上游
   const failed = roomFailUntil.get(room)
   if (failed && failed.until > now) throw new HuyaError(failed.desc)
+  const key = `${room}:${quality}`
   const entry = await loadRoom(room, quality, ctx)
   const options = { timeoutMs: ctx.timeoutMs, fetchImpl: ctx.fetchImpl }
   const preferred = preferredLine.get(room)
   const candidates = orderLines(entry.lines, preferred, rejectedLines.get(room), now)
   const failures = []
   for (const line of candidates) {
-    const url = signedLineUrl(entry, line, now)
+    let session = lineSession(entry, key, line, now)
     let reason = ''
+    let resigned = false
     try {
-      const manifest = await fetchManifest(url, options)
-      if (manifest.status !== 200) reason = `清单 HTTP ${manifest.status}`
-      else if (!manifest.text.trimStart().startsWith('#EXTM3U')) reason = '清单不是 HLS'
+      let outcome = await tryLine(session.url, !session.reused, options)
+      if (outcome.reason && session.reused && outcome.status >= 400 && outcome.status < 500
+        && now >= session.expiresAt - SESSION_EXPIRY_MARGIN_MS) {
+        // 到期的签名被拒：用最新房间页的 wsTime 重签一次。别的播放请求可能已经抢先签过了，有就直接用它的
+        const latest = sessionsOf(key).get(line.cdn)
+        session = latest && latest.signedAt > session.signedAt
+          ? { ...latest, reused: false }
+          : lineSession(entry, key, line, now, { fresh: true })
+        resigned = true
+        outcome = await tryLine(session.url, true, options)
+      }
+      if (outcome.reason) reason = outcome.reason
       else {
+        roomFailUntil.delete(room)
+        if (resigned) printYellow(`虎牙「${entry.name}」${line.cdn} 线路签名被拒，已重新签名继续播放`)
         if (line.cdn !== preferred) {
-          const segment = lastSegmentUrl(manifest.text, manifest.finalUrl)
-          const status = segment ? await probeSegment(segment, options) : 200
-          if (status !== 200) reason = `分片 HTTP ${status}`
+          preferredLine.set(room, line.cdn)
+          if (failures.length) printYellow(`虎牙「${entry.name}」${failures.join('、')}，已切换到 ${line.cdn} 线路`)
         }
-        if (!reason) {
-          roomFailUntil.delete(room)
-          if (line.cdn !== preferred) {
-            preferredLine.set(room, line.cdn)
-            if (failures.length) printYellow(`虎牙「${entry.name}」${failures.join('、')}，已切换到 ${line.cdn} 线路`)
-          }
-          return {
-            url,
-            desc: `虎牙「${entry.name}」${entry.bitrate ? `${entry.bitrate}K` : '原画'}地址获取成功（${line.cdn} 线路）`,
-            relayHls: true,
-            manifestText: manifest.text,
-            manifestUrl: manifest.finalUrl,
-            upstreamHeaders: { Referer: REFERER, 'User-Agent': UA },
-          }
+        return {
+          url: session.url,
+          desc: `虎牙「${entry.name}」${bitrateLabel(entry.bitrate)}地址获取成功（${line.cdn} 线路）`,
+          relayHls: true,
+          manifestText: outcome.manifest.text,
+          manifestUrl: outcome.manifest.finalUrl,
+          upstreamHeaders: { Referer: REFERER, 'User-Agent': UA },
         }
       }
     } catch (error) {
@@ -491,7 +605,7 @@ async function resolveFresh(room, ctx) {
     }
     failures.push(`${line.cdn} 线路${reason}`)
     rejectLine(room, line.cdn, now)
-    entry.signed.delete(line.cdn)
+    sessionsOf(key).delete(line.cdn)
     if (line.cdn === preferred) preferredLine.delete(room)
   }
   // 有的线路「首次取清单放行、再取就拒」，会让房间在换线成功与全线失败之间来回抖：
@@ -518,6 +632,7 @@ export async function resolveRoom(ref, ctx = {}) {
 export function clearResolveCache() {
   roomCache.clear()
   roomPending.clear()
+  lineSessions.clear()
   rejectedLines.clear()
   preferredLine.clear()
   roomFailUntil.clear()

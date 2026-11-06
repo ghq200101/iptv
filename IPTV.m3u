@@ -7,21 +7,12 @@ http://hlsal-ldvt.qing.mgtv.com/nn_live/nn_x64/Y2RuZXhfaWQ9YWxfaGxzX2xkdnQmZT02O
 #EXTINF:-1 group-title="卫视",浙江卫视4K
 http://ali-xwl.cztv.com/live/channel4k2160p.m3u8
 
-#EXTINF:-1 group-title="香港",凤凰中文
-http://zmgd.zyrnet.com:8888/hls/110/index.m3u8
-#EXTINF:-1 group-title="香港",凤凰资讯
-http://zmgd.zyrnet.com:8888/hls/109/index.m3u8
-#EXTINF:-1 tvg-logo="" group-title="香港",凤凰香港
-https://cdn.qd.je/163189/fhhk
-
 #EXTINF:-1 tvg-logo="" group-title="体育",纬来体育
 https://hlsz.yjjcfw.com/live/vl.m3u8?expire=1786948372&sign=2e4a56b89fe644db147552011f972714
 # === END 直连源 ===
 
 # === BEGIN 亚太旧源直连复核保留 ===
 # 说明：以下频道已绕过 VPN 复核根地址与实际媒体数据；不可直连、明显不稳定及旧式 RTMP 源已清理。
-#EXTINF:-1 tvg-logo="" group-title="香港",翡翠台
-https://cdn3.indevs.in/stream/tvb/fct/
 #EXTINF:-1 tvg-name="公视" tvg-logo="" group-title="台湾",公视高清
 http://211.72.174.95:8116/0.ts
 #EXTINF:-1 tvg-name="民视" tvg-logo="" group-title="台湾",民视高清
@@ -120,3 +111,13 @@ https://play.cmptp.fjgdwl.com/live/63a563ec75764af588f3215b0afa2588.m3u8
 #EXTINF:-1 group-title="青海",西宁新闻综合
 https://liveout.xntv.tv/a65jur/96iln2.m3u8
 # === END 西宁广电直连源 ===
+
+# === BEGIN 青海市台官方直连源 ===
+# 来源：格尔木「望昆仑」、海东「爱上河湟」官方 App 的电视直播接口；2026-10-27 实测两路均为 1080p/25fps、H.264/AAC，清单和媒体分片持续更新，无需额外请求头。
+# 地址带官方长效 sign/t 参数，按接口原样保留；新版本的「青海」模块每天更新当前地址，并自动收掉本区块的同名精选条目。未升级的部署仍可直接播放本区块。
+# 格尔木节目单为全天「当日回放」占位、海东节目表为空，均无可用 EPG；官方台标已收入内置台标库。
+#EXTINF:-1 group-title="青海" catchup="none",格尔木新闻综合
+https://miku-live-hls-gemwkl-tv.geermurmt.cn/gemwkl-tv/xwzh.m3u8?sign=bd290c67d513b07aa49842b8aedd02c2&t=1876791311
+#EXTINF:-1 group-title="青海" catchup="none",海东综合频道
+https://hls-hdapp.hdhhy.cn/ashh-tv/zhds.m3u8?sign=26c873e6e3d94ba02aa78c0fbf326dfd&t=1886228277
+# === END 青海市台官方直连源 ===
