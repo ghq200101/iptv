@@ -1,0 +1,15 @@
+[Unit]
+Description=Daily IPTV image update (03:00 Asia/Shanghai)
+
+[Timer]
+# 显式带时区，服务器时区是 UTC 也不会跑偏
+OnCalendar=*-*-* 03:00:00 Asia/Shanghai
+# 关机错过的更新，开机后补跑一次（原配置最容易漏掉的一点）
+Persistent=true
+# 错峰，避免整点一堆任务同时抢带宽
+RandomizedDelaySec=15m
+AccuracySec=1m
+Unit=iptv-update.service
+
+[Install]
+WantedBy=timers.target

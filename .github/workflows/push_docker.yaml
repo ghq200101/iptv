@@ -3,8 +3,7 @@ name: Docker Publish
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - 'Dockerfile'
       - 'package.json'
@@ -15,17 +14,55 @@ on:
       - 'extractors/**'
       - 'web/**'
       - 'scripts/**'
+      - 'deploy/**'
       - '.github/workflows/push_docker.yaml'
   release:
-    types:
-      - published
+    types: [published]
+
+# 最小权限：整个工作流只需要读仓库
+permissions:
+  contents: read
+
+# 同一分支的旧构建直接取消。否则连推两次时，先发起的旧任务可能最后完成，
+# 把 latest 覆盖回旧代码（这是原流程最隐蔽的一个坑）。
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 env:
   IMAGE: ghq200101/iptv
 
 jobs:
+  verify:
+    name: verify (lint + smoke test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+          failure-threshold: error
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install deps
+        run: npm ci --ignore-scripts
+
+      - name: Smoke tests
+        run: |
+          node scripts/test-data-dir.mjs
+          node scripts/test-hidden-rules.mjs
+          node scripts/test-m3u-parse.mjs
+
   build:
     name: build ${{ matrix.platform }}
+    needs: verify
     strategy:
       fail-fast: false
       matrix:
@@ -41,14 +78,16 @@ jobs:
             runner: ubuntu-latest
             qemu: true
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 10
+    # QEMU 下装 chromium 很慢，10 分钟不够，容易假失败
+    timeout-minutes: 30
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
       - name: Prepare platform metadata
         shell: bash
-        run: echo "PLATFORM_PAIR=${PLATFORM//\//-}" >> "$GITHUB_ENV"
+        run: |
+          echo "PLATFORM_PAIR=${PLATFORM//\//-}" >> "$GITHUB_ENV"
+          echo "PKG_VERSION=$(jq -r .version package.json)" >> "$GITHUB_ENV"
         env:
           PLATFORM: ${{ matrix.platform }}
 
@@ -74,6 +113,17 @@ jobs:
           context: .
           file: ./Dockerfile
           platforms: ${{ matrix.platform }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ env.PKG_VERSION }}
+            org.opencontainers.image.title=iptv
+          # 分层缓存：改了 app.js 也只重跑最后一层，构建时间从十几分钟降到一两分钟
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+          # 生成来源证明和 SBOM，方便以后排查“这个镜像到底是哪次提交打的”
+          provenance: true
+          sbom: true
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
@@ -93,12 +143,12 @@ jobs:
           overwrite: true
 
   merge:
+    name: publish multi-arch manifest
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
       - name: Download digests
         uses: actions/download-artifact@v8
@@ -120,12 +170,37 @@ jobs:
         working-directory: ${{ runner.temp }}/digests
         shell: bash
         run: |
+          set -euo pipefail
           VERSION=$(jq -r '.version' "$GITHUB_WORKSPACE/package.json")
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-          TAGS="${IMAGE}:latest ${IMAGE}:${VERSION} ${IMAGE}:${MAJOR}.${MINOR} ${IMAGE}:${MAJOR}"
+          SHA_SHORT=$(git -C "$GITHUB_WORKSPACE" rev-parse --short=7 HEAD)
+
+          TAGS="${IMAGE}:${VERSION} ${IMAGE}:${MAJOR}.${MINOR} ${IMAGE}:${MAJOR} ${IMAGE}:sha-${SHA_SHORT}"
+          # latest 只由 main 分支推进，避免打 tag 发版时把 latest 指到旧提交
+          if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+            TAGS="${TAGS} ${IMAGE}:latest"
+          fi
+
           docker buildx imagetools create \
             $(printf -- '-t %s ' $TAGS) \
             $(printf '${{ env.IMAGE }}@sha256:%s ' *)
 
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+        id: manifest
+
       - name: Inspect published image
-        run: docker buildx imagetools inspect "${IMAGE}:latest"
+        run: docker buildx imagetools inspect "${IMAGE}:sha-${GITHUB_SHA::7}"
+
+      - name: Job summary
+        run: |
+          {
+            echo "## 已发布"
+            echo ""
+            echo "- 版本：\`$(jq -r '.version' package.json)\`"
+            echo "- 提交：\`${{ github.sha }}\`"
+            echo "- 镜像：\`${IMAGE}\`"
+            echo ""
+            echo '```'
+            docker buildx imagetools inspect "${IMAGE}:latest"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

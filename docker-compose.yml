@@ -4,13 +4,14 @@ services:
     container_name: iptv
     init: true
     ports:
-      - "52011:52011"                             # 宿主机:容器端口映射
+      # 只绑本机：对外统一走 nginx（80/443），容器端口不再暴露到公网
+      - "127.0.0.1:2086:2086"
     environment:
       # - muserId=                               # 可选：咪咕账号ID；建议在后台登录，不要提交凭据
       # - mtoken=                                # 可选：咪咕登录令牌；建议在后台登录，不要提交凭据
       # - mSichuanAccessToken=                  # 可选：四川广电官网登录令牌；也可在后台源管理中填写
-      - mport=52011                             # 必须：容器监听端口，与 ports 对应
-      - mhost=http://104.168.202.248:52011      # 可选：外部访问地址（如 http://192.168.1.100:1905）
+      - mport=2086                              # 必须：容器监听端口，与 ports 对应
+      - mhost=https://iptv.czghq.com            # 可选：外部访问地址
       - mrateType=3                             # 画质：2=标清(480p)，3=高清(720p)，4=蓝光(1080p,需VIP)
       - mpass=                                  # 可选：访问密码（设置后访问: http://ip:port/密码/...）
       - menableHDR=true                         # 可选：是否开启HDR
@@ -27,4 +28,10 @@ services:
       - mdataDir=/iptv/data                      # 配置/数据持久化目录（对应下方挂载的卷）
     volumes:
       - "./data:/iptv/data"
+    logging:
+      # 日志封顶，避免长期运行把磁盘写满
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: always

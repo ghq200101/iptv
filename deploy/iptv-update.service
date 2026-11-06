@@ -1,0 +1,24 @@
+[Unit]
+Description=Update IPTV container to the latest published image
+Documentation=https://github.com/ghq200101/iptv
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/update-iptv.sh
+# 拉镜像 + 重建 + 健康检查，给足 15 分钟
+TimeoutStartSec=900
+Restart=no
+# 更新是后台任务，别和前台业务抢 CPU/IO
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=iptv-update
+
+[Install]
+WantedBy=multi-user.target
