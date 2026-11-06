@@ -19,6 +19,7 @@ set -Eeuo pipefail
 REPO_DIR="${REPO_DIR:-/opt/iptv}"
 GIT_BRANCH="${GIT_BRANCH:-main}"
 IMAGE="${IMAGE:-ghq200101/iptv:latest}"
+CONTAINER="${CONTAINER:-iptv}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:2086/}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-90}"   # 秒
 LOCK_FILE="${LOCK_FILE:-/var/lock/iptv-update.lock}"
@@ -81,24 +82,25 @@ fi
 [ -f docker-compose.yml ] || die "缺少 docker-compose.yml"
 
 # ---- 3. 拉镜像并比对 -------------------------------------------------------
-OLD_ID=$(docker image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null || true)
+# 关键：跟「容器里实际在跑的镜像」比，而不是跟 tag 比。
+# 因为 pull 会把 tag 移到新镜像，如果拿 tag 的前后状态比，会误判成“没变化”。
+RUNNING_ID=$(docker inspect -f '{{.Image}}' "$CONTAINER" 2>/dev/null || true)
 log "拉取镜像 $IMAGE"
 "${DC[@]}" pull --quiet || die "docker compose pull 失败"
 NEW_ID=$(docker image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null || true)
 [ -n "$NEW_ID" ] || die "拉取后仍找不到镜像 $IMAGE"
 
-if [ "$OLD_ID" = "$NEW_ID" ] && [ "$FORCE" -eq 0 ]; then
-  log "镜像未变化（${NEW_ID:7:12}），不重启容器"
-  [ "$CHECK_ONLY" -eq 1 ] && log "check: up-to-date"
+if [ -n "$RUNNING_ID" ] && [ "$RUNNING_ID" = "$NEW_ID" ] && [ "$FORCE" -eq 0 ]; then
+  log "运行中的容器已是最新镜像（${NEW_ID:7:12}），不重启"
   exit 0
 fi
 
 if [ "$CHECK_ONLY" -eq 1 ]; then
-  log "check: 有新镜像 ${OLD_ID:7:12} -> ${NEW_ID:7:12}（未应用）"
+  log "check: 运行中 ${RUNNING_ID:7:12} / 最新 ${NEW_ID:7:12}（未应用）"
   exit 0
 fi
 
-log "镜像变化: ${OLD_ID:7:12} -> ${NEW_ID:7:12}，重建容器"
+log "镜像变化: ${RUNNING_ID:7:12} -> ${NEW_ID:7:12}，重建容器"
 
 # ---- 4. 重建并等待健康 -----------------------------------------------------
 "${DC[@]}" up -d --remove-orphans || die "docker compose up 失败"
@@ -114,10 +116,10 @@ done
 
 if [ "$healthy" -ne 1 ]; then
   log "新镜像 ${HEALTH_TIMEOUT}s 内未响应，开始回滚"
-  if [ -n "$OLD_ID" ]; then
-    docker tag "$OLD_ID" "$IMAGE"
+  if [ -n "$RUNNING_ID" ]; then
+    docker tag "$RUNNING_ID" "$IMAGE"
     "${DC[@]}" up -d --force-recreate || true
-    notify "IPTV 新镜像不健康，已回滚到 ${OLD_ID:7:12}"
+    notify "IPTV 新镜像不健康，已回滚到 ${RUNNING_ID:7:12}"
   else
     notify "IPTV 新镜像不健康，且没有可回滚的旧镜像"
   fi

@@ -33,6 +33,7 @@ NOTIFY_URL=""
 # 可选：覆盖默认值
 # REPO_DIR="/opt/iptv"
 # IMAGE="ghq200101/iptv:latest"
+# CONTAINER="iptv"
 # HEALTH_URL="http://127.0.0.1:2086/"
 # HEALTH_TIMEOUT=90
 EOF
