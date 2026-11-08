@@ -211,8 +211,13 @@ export class YspBrowserSession {
     if (!page.url().startsWith(YSP_HOME)) {
       await page.goto(YSP_HOME, { waitUntil: 'domcontentloaded', timeout: 30_000 })
     }
+    // 只等登录 SDK 就绪即可。
+    // 原实现还要求首页渲染出 ≥40 个频道磁贴（.tv-main-con-r-list-left-imga），但海外 VPS
+    // 访问 /tv/home 时内容区可能整块为空（实测 DOM 仅 200 余节点，磁贴恒为 0），
+    // 这个条件会让导入 cookie 在还没种入之前就 30 秒超时。
+    // readAccount 走的是 window.yspLogin.default.info()，不依赖磁贴，所以放宽为只等 SDK。
     await page.waitForFunction(
-      () => window.yspLogin?.default && document.querySelectorAll('.tv-main-con-r-list-left-imga').length >= 40,
+      () => Boolean(window.yspLogin?.default),
       { timeout: 30_000 },
     )
   }
