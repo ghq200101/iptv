@@ -157,7 +157,7 @@ export class YspBrowserSession {
       onIdleRequest: () => this.requestIdleYield(),
       launchOptions: {
         userDataDir: this.profileDir,
-        protocolTimeout: 30_000,
+        protocolTimeout: 120_000,
         defaultViewport: visible ? null : { width: 1440, height: 900 },
         // app.js 自己处理 SIGTERM / SIGINT：browser.close() 让 Chromium 把 cookie 落盘、删掉 Singleton 锁再退出。
         // puppeteer 默认也挂这两个信号，收到就 SIGKILL 整个进程组（SIGINT 还立刻 process.exit），抢在正常关闭
@@ -209,7 +209,7 @@ export class YspBrowserSession {
     const page = this.page
     if (!page || page.isClosed()) throw new Error('央视频浏览器页面不可用')
     if (!page.url().startsWith(YSP_HOME)) {
-      await page.goto(YSP_HOME, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+      await page.goto(YSP_HOME, { waitUntil: 'domcontentloaded', timeout: 90_000 })
     }
     // 只等登录 SDK 就绪即可。
     // 原实现还要求首页渲染出 ≥40 个频道磁贴（.tv-main-con-r-list-left-imga），但海外 VPS
@@ -218,7 +218,7 @@ export class YspBrowserSession {
     // readAccount 走的是 window.yspLogin.default.info()，不依赖磁贴，所以放宽为只等 SDK。
     await page.waitForFunction(
       () => Boolean(window.yspLogin?.default),
-      { timeout: 30_000 },
+      { timeout: 90_000 },
     )
   }
 
@@ -306,7 +306,7 @@ export class YspBrowserSession {
       }
       page.on('response', onResponse)
       try {
-        await page.goto(YSP_HOME, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+        await page.goto(YSP_HOME, { waitUntil: 'domcontentloaded', timeout: 90_000 })
         await this.ensureHome()
         const status = await this.readAccount()
         if (!status.authenticated) {
