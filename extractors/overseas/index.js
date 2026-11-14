@@ -6,21 +6,21 @@
  * 分工：大陆也播得顺的放 IPTV.m3u，只在海外顺的放这里（OVERSEAS.md）。
  *
  * 频道表里标了 x-top-first="1" 的台（官方主清单把低档排在前面）不直接给地址：播放时本机取一次主清单，
- * 把最高档挪到最前再交给播放器（utils/hlsTopFirst.js），子清单和分片仍由播放器直连，网速不够照常降档。
- * 本机取不到主清单（比如部署在大陆、官方入口在大陆连不上）就 302 回官方原地址，和直连时一样。
+ * 把最高档挪到最前再交给播放器（utils/hlsTopFirst.js），网速不够照常降档。
+ * 有生效代理时清单与媒体均经服务器转发；无代理时子清单和分片直连，取不到主清单可 302 回退。
  * 官方只公开单档清单的台（France 24）登记在 LADDERS 里，播放时直接拼主清单，不发请求。
  */
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 
 import { buildMasterPlaylist, topVariantFirst } from '../../utils/hlsTopFirst.js'
-import { proxyAwareFetch } from '../../utils/systemProxy.js'
+import { domainSuffix, outboundFetch, outboundProxyUrl } from '../../utils/outboundProxy.js'
+import { fetchUpstreamResponse } from '../../utils/hlsProxy.js'
 
 export const PLAYLIST_FILE = 'IPTV-overseas.m3u'
+const DEFAULT_PLAYLIST_URL = `https://raw.githubusercontent.com/akiralereal/iptv/refs/heads/main/${PLAYLIST_FILE}`
 // 设成空（moverseasPlaylistUrl=）就只用镜像自带的那份，便于本地调试与测试
-export const PLAYLIST_URL = process.env.moverseasPlaylistUrl !== undefined
-  ? process.env.moverseasPlaylistUrl
-  : `https://raw.githubusercontent.com/akiralereal/iptv/refs/heads/main/${PLAYLIST_FILE}`
+export const PLAYLIST_URL = process.env.moverseasPlaylistUrl !== undefined ? process.env.moverseasPlaylistUrl : DEFAULT_PLAYLIST_URL
 const BUNDLED_PATH = new URL(`../../${PLAYLIST_FILE}`, import.meta.url)
 const REF_PREFIX = 'overseas-'
 const REF_RE = /^overseas-[a-z0-9][a-z0-9-]{0,54}$/
@@ -53,12 +53,25 @@ export async function loadChannels({ url = PLAYLIST_URL } = {}) {
   const warnings = []
   if (url) {
     try {
-      return { channels: await fetchAndParseM3u(url), from: 'remote', warnings }
+      return { channels: await fetchAndParseM3u(url, { fetchImpl: outboundFetch }), from: 'remote', warnings }
     } catch (error) {
       warnings.push(`仓库里的 ${PLAYLIST_FILE} 拉不到，先用镜像自带的：${error.message}`)
     }
   }
   return { channels: parsePlaylistContent(readFileSync(BUNDLED_PATH, 'utf8')), from: 'bundled', warnings }
+}
+
+/**
+ * 代理规则要放行的域名后缀：取频道表的 GitHub，加上频道表里每条流的主机（几十个 CDN 收成 amagi.tv、
+ * cloudfront.net 这样的后缀）。台标由播放器自己取，不算。按镜像自带的那份算，表改了随下个版本更新。
+ */
+export function proxyHostsOf(playlist, playlistUrl = DEFAULT_PLAYLIST_URL) {
+  const hosts = new Set(playlistUrl ? [domainSuffix(new URL(playlistUrl).hostname)] : [])
+  for (const line of String(playlist || '').split('\n')) {
+    const match = line.match(/^\s*https?:\/\/([^/\s:?#]+)/i)
+    if (match) hosts.add(domainSuffix(match[1]))
+  }
+  return [...hosts].sort()
 }
 
 /** 频道的 deferredRef：按台名生成，重启、换地址都不变（用户对这台的隐藏、改名、排序跟着它走）。 */
@@ -83,14 +96,14 @@ async function readLimited(response) {
   return Buffer.concat(chunks, size).toString('utf8')
 }
 
-export function createResolver({ fetchImpl = proxyAwareFetch, load = loadChannels } = {}) {
+export function createResolver({ fetchImpl = outboundFetch, load = loadChannels, proxyEnabled = () => Boolean(outboundProxyUrl()) } = {}) {
   let catalog = new Map()   // ref -> { name, url }
   let loading = null
   let loadedAt = 0
 
   function remember(channels) {
     const next = new Map()
-    for (const channel of channels) if (channel.topFirst) next.set(refForName(channel.name), channel)
+    for (const channel of channels) next.set(refForName(channel.name), channel)
     catalog = next
     loadedAt = Date.now()
   }
@@ -109,12 +122,15 @@ export function createResolver({ fetchImpl = proxyAwareFetch, load = loadChannel
     let channel
     try { channel = claimsRef(ref) ? await lookup(String(ref)) : null } catch { channel = null }
     if (!channel) return { url: '', desc: '海外频道表里没有这个频道，可能已下架' }
+    const proxied = proxyEnabled()
+    const routing = proxied ? { proxyHls: true } : { relayHls: true }
+    if (!channel.topFirst) return { url: channel.url, ...(proxied ? routing : {}) }
     const ladder = LADDERS.get(channel.url)
     if (ladder) {
       return {
         url: ladder[0].url,
         desc: `${channel.name} 主清单已按最高档在前拼好`,
-        relayHls: true,
+        ...routing,
         manifestText: buildMasterPlaylist(ladder),
         manifestUrl: ladder[0].url,
       }
@@ -129,19 +145,20 @@ export function createResolver({ fetchImpl = proxyAwareFetch, load = loadChannel
         throw new Error(`HTTP ${response.status}`)
       }
       const text = await readLimited(response)
-      // 不是主清单（官方换成了单档）就别经本机转发：播放器每次刷新清单都会打到本机
-      if (!text.trimStart().startsWith('#EXTM3U') || !text.includes('#EXT-X-STREAM-INF')) throw new Error('不是多档主清单')
+      // 无代理时单档清单由播放器直连；代理模式下单档也必须留在服务器。
+      if (!text.trimStart().startsWith('#EXTM3U') || (!proxied && !text.includes('#EXT-X-STREAM-INF'))) throw new Error('不是多档主清单')
       const manifestUrl = response.url || channel.url
       return {
         url: manifestUrl,
         desc: `${channel.name} 主清单已按最高档在前转发`,
-        relayHls: true,
+        ...routing,
         manifestText: topVariantFirst(text),
         manifestUrl,
       }
     } catch (error) {
-      // 不带 relayHls：app.js 直接 302 回官方原地址，播放器照旧自己选档
+      // 有代理时不能让失败请求绕过代理；无代理保留原有 302 回退。
       const reason = ['AbortError', 'TimeoutError'].includes(error?.name) ? '请求超时' : (error?.message || String(error))
+      if (proxied) return { url: '', status: 502, desc: `${channel.name} 代理取清单失败：${reason}` }
       return { url: channel.url, desc: `${channel.name} 主清单本机取不到（${reason}），改由播放器直连` }
     }
   }
@@ -155,13 +172,19 @@ export default {
   id: 'overseas',
   name: '海外频道',
   category: 'overseas',
-  description: '海外免费直播频道（体育、娱乐时尚、文旅、国际、韩国），并入现有分组。在大陆常卡顿或连不上，默认关闭；视频由播放器直连各平台 CDN，能不能看取决于播放设备的网络。',
-  // 播放器直连海外 CDN：能不能看取决于看的人的网络，服务端判断不了，交给用户自己打开
+  outbound: 'proxy',
+  proxyProbe: { name: '海外频道（DW）', url: 'https://dwamdstream102.akamaized.net/hls/live/2015525/dwstream102/master.m3u8' },
+  proxyHosts: proxyHostsOf(readFileSync(BUNDLED_PATH, 'utf8')),
+  description: '海外免费直播频道（体育、娱乐时尚、文旅、国际、韩国），并入现有分组。在大陆常卡顿或连不上，默认关闭；可在「设置 → 网络代理」配置代理，清单和视频经服务器转发，播放设备无需设置代理；未配置代理时由播放器直连各平台 CDN。',
+  // 默认关闭；用户确认直连网络或代理可用后自行打开
   defaultEnabled: false,
   capabilities: { cache: 'disk', resolve: true, epg: false, catchup: false },
+  catalogVersion: 1,
+  channelHlsModeForConfig: () => outboundProxyUrl() ? 'proxy' : undefined,
+  fetchProxyMedia: (_ref, _config, url, options) => fetchUpstreamResponse(url, { ...options, fetchImpl: outboundFetch }),
   defaultRefreshMinutes: 360,
   refreshConfigurable: false,
-  refreshDescription: '每 6 小时从仓库拉一次 IPTV-overseas.m3u（与精选列表同周期），改了推送即生效；视频由播放器直连各平台 CDN，官方主清单把低档排在前面的几台由本机取一次主清单、把最高档挪到最前。',
+  refreshDescription: '每 6 小时从仓库拉一次 IPTV-overseas.m3u（与精选列表同周期），改了推送即生效；配置代理后清单和视频经服务器转发；未配置时视频由播放器直连。官方主清单把低档排在前面的几台由本机取一次主清单、把最高档挪到最前。',
   configSchema: [],
 
   async fetch() {
@@ -172,8 +195,9 @@ export default {
       if (!groups.has(group)) groups.set(group, { name: group, dataList: [] })
       groups.get(group).dataList.push({
         name,
-        // 最高档前置的台写成本机入口（${replace}/overseas-…），播放时由 resolve 转发主清单
-        ...(topFirst ? { deferredRef: refForName(name) } : { url }),
+        // 固定本机入口让代理设置即时影响播放；迁移前的直链仅保留频道身份。
+        deferredRef: refForName(name),
+        ...(!topFirst ? { identityUrl: url } : {}),
         ...(logo ? { logo } : {}),
         ...(opts ? { opts } : {}),
         catchup: 'none',

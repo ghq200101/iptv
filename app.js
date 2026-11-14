@@ -1,5 +1,5 @@
 import http from "node:http"
-import { localRequestHandlerFor, resolverFor, shutdownModules } from './extractors/registry.js'
+import { localRequestHandlerFor, registerRefResolver, resolverFor, shutdownModules } from './extractors/registry.js'
 import { pipeFlv } from './utils/flvProxy.js'
 import { sendLocalMediaResponse } from './utils/localMediaResponse.js'
 import { readFileSync, mkdirSync, existsSync, statSync } from "node:fs"
@@ -26,22 +26,30 @@ import { getChannelsAPI, getExternalSourcesAPI, saveExternalSourcesAPI,
          uploadLogoAPI, removeLogoAPI, copyChannelToGroupsAPI, getBuiltInSourcesAPI } from "./utils/adminAPI.js";
 import { getEpgSourcesAPI, setEpgEnabledAPI, addEpgSourceAPI, updateEpgSourceAPI,
          removeEpgSourceAPI, expireEpgSourcesAPI } from "./utils/epgSourcesAPI.js";
-import { userManager } from "./utils/userManager.js";
+import { userManager, viewerIp } from "./utils/userManager.js";
 import { getUsersAPI, addUserAPI, updateUserAPI, removeUserAPI, regenUserTokenAPI } from "./utils/usersAPI.js";
 import { getAlertsAPI, getAlertTracker, postAlertsAPI } from "./utils/alerts.js";
 import { getNotifyAPI, postNotifyAPI, getNotifier } from "./utils/notify.js";
 import { getAliasesAPI, setAliasRuleAPI, removeAliasRuleAPI } from "./utils/aliasesAPI.js";
 import { getGroupRulesAPI, setGroupRuleAPI, removeGroupRuleAPI, moveGroupRuleAPI } from "./utils/groupRulesAPI.js";
-import { getSystemConfigAPI, saveSystemConfigAPI } from "./utils/systemConfigAPI.js";
+import { getSystemConfigAPI, saveSystemConfigAPI, testProxyAPI } from "./utils/systemConfigAPI.js";
 import { exportConfigAPI, importConfigAPI } from "./utils/configBackupAPI.js";
 import { readConfig, saveConfig, parseInterfaceTxt, collectGroupConflicts, applyConfig,
          listProfiles, createProfile, renameProfile, deleteProfile } from "./utils/playlistConfig.js";
 import { updateBuiltInSources, updateExternalSources, updateExtractors, hasChangedResult, changedSourceNames, externalSourceManager, builtInSourceManager } from "./utils/channelMerger.js";
-import { GITHUB_RAW_MIRRORS, isBuiltInSubscriptionSource } from "./utils/externalSources.js";
+import { GITHUB_RAW_MIRRORS, isBuiltInSubscriptionSource, sourceUsesProxy } from "./utils/externalSources.js";
+import { createCustomProxyResolver, customSourceFetch, proxiableUrl } from "./utils/customSourceProxy.js";
+import { outboundProxyUrl } from "./utils/outboundProxy.js";
 import { startProbe, getProbeStatus, cancelProbe } from "./utils/sourceProbe.js";
 import { cleanUserAgent, userAgentOf } from "./utils/channelOpts.js";
 import { SYSTEM_ASSET_PATHS, readAnnouncementAsset } from "./utils/announcement.js";
 import { cleanCoreDumps } from "./utils/coreDumpCleanup.js";
+
+// 自定义源「经网络代理转发」的播放引用（${replace}/proxy/cp-<hex>.m3u8）：不是抓取模块，挂到 resolverFor 上
+registerRefResolver(createCustomProxyResolver({
+  getChannels: () => externalSourceManager.proxiedChannels(),
+  getVersion: () => externalSourceManager.revision,
+}))
 
 // 全代理/兼容模式（issue #98）的服务端可观测性。上一版的日志设计在实战里分不清三种情况
 // （首行不带分片数、每 pid 每分钟一行会让 curl 与播放器互吞对方的行、分片 404 与上游失败全静默），
@@ -283,7 +291,7 @@ async function handleRequest(req, res) {
         currentUser = u
         accessPrefix = `/u/${tm[1]}`
         routePath = "/" + (tm[2] || "")
-        userManager.recordUsage(u)
+        userManager.recordUsage(u, { ip: viewerIp(req.socket?.remoteAddress, req.headers['x-forwarded-for']), ua: req.headers['user-agent'] })
       } else {
         // 令牌无效 / 已停用 / 已过期 → 直接拒绝，使吊销立即生效
         res.writeHead(403, { 'Content-Type': 'text/plain;charset=UTF-8' })
@@ -411,6 +419,20 @@ async function handleRequest(req, res) {
       return
     }
 
+    // 网络代理测试（设置 → 网络代理）：经输入框里的代理连 YouTube / Telegram，连不上是正常结果，不算服务端错误
+    if (routePath === '/api/proxy-test' && method === 'POST') {
+      try {
+        const data = JSON.parse(await readBody(req) || '{}')
+        const result = await testProxyAPI(typeof data.proxy === 'string' ? data.proxy : '')
+        res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json;charset=UTF-8' });
+        res.end(JSON.stringify(result));
+      } catch (error) {
+        res.writeHead(400, { 'Content-Type': 'application/json;charset=UTF-8' });
+        res.end(JSON.stringify({ success: false, message: error.message }));
+      }
+      return
+    }
+
     if (routePath === '/api/core-dumps/clean' && method === 'POST') {
       printBlue("API: 清理崩溃转储")
       res.writeHead(200, { 'Content-Type': 'application/json;charset=UTF-8' });
@@ -505,15 +527,18 @@ async function handleRequest(req, res) {
             result = { success: false, message: '源不存在' }
           } else {
             const channels = []
+            // 开了「经网络代理转发」且有生效代理：会由服务器转发的频道也经代理探，否则全被误判失效
+            const viaProxy = sourceUsesProxy(src) && Boolean(outboundProxyUrl())
+            const probeFetch = url => (viaProxy && proxiableUrl(url) ? { fetchImpl: customSourceFetch } : {})
             if (src.mode === 'subscription' && Array.isArray(src.parsedChannels)) {
               // 按播放器会发的 UA 探：频道自带的优先，其次订阅源里填的（issue #170）
               const sourceUa = cleanUserAgent(src.userAgent)
               for (const ch of src.parsedChannels) {
-                channels.push({ name: ch.name, url: ch.url, group: ch.group, userAgent: userAgentOf(ch.opts) || sourceUa })
+                channels.push({ name: ch.name, url: ch.url, group: ch.group, userAgent: userAgentOf(ch.opts) || sourceUa, ...probeFetch(ch.url) })
               }
             } else if (src.m3u8Url) {
               // 直连/抓取模式：检测当前 m3u8 地址
-              channels.push({ name: src.name || '未命名源', url: src.m3u8Url, group: src.group })
+              channels.push({ name: src.name || '未命名源', url: src.m3u8Url, group: src.group, ...probeFetch(src.m3u8Url) })
             }
             result = channels.length === 0
               ? { success: false, message: '该源没有可检测的频道（请先导入/保存）' }
@@ -747,8 +772,11 @@ async function handleRequest(req, res) {
             result = await importBrowserLoginAPI(data.id, data.payload)
             break
           case 'youtubeInspect':
+          case 'youtubeCheck':
           case 'youtubeAdd':
           case 'youtubeRemove':
+          case 'youtubeStatus':
+          case 'youtubeRuntime':
             result = await youtubeSubscriptionAPI(data)
             break
           case 'toggleModule':
@@ -1252,7 +1280,7 @@ async function handleRequest(req, res) {
       logProxyProbe(target.pid, req, result, Date.now() - started)
       return
     }
-    // 上游若给的是嵌套子清单（拍平失败时才会出现），同样改写成同源相对地址再下发，
+    // 上游若给的是嵌套子清单（拍平失败，或模块/自定义源直接交回了 master 原文），同样改写成同源相对地址再下发，
     // 直接透传会让播放器拿着 CDN 的相对路径去请求本机、必然 404
     if (/\.m3u8(?:\?|$)/i.test(routeUrl)) {
       const nested = await fetchNested(target.url, target.upstreamHeaders, target.upstreamFamily, fetchMedia)
@@ -1442,7 +1470,7 @@ async function handleRequest(req, res) {
   // 结果异常
   if (result.code != 302) {
 
-    // silent：批量探测被本地拒绝，appUtils 已按客户端归并打过黄字，不再逐条刷红
+    // silent：批量探测被本地拒绝，appUtils 已按客户端归并打过黄字；或模块已就同一原因记过一行（如 YouTube 出口被拦），不再逐条刷红
     if (!result.silent) printRed(result.desc)
     res.writeHead(result.code, {
       'Content-Type': 'application/json;charset=UTF-8',
@@ -1464,7 +1492,15 @@ async function handleRequest(req, res) {
     proxyMode = true
     proxyPid ||= routeUrl.split('?')[0].split('/').filter(Boolean).at(-1).replace(/\.m3u8$/, '')
   }
-  if (relayMode || proxyMode || result.relayHls) {
+  // 自定义源「经网络代理转发」交回了原地址：照没勾开关时一样由播放器直连，不能因为入口在 /proxy/ 下
+  // 就改由服务器取清单、转发分片（没代理时等于服务器直连转发，连不上还要白等 10 秒才 302）。
+  // 清单直出（relay）订阅的播放器不跟随跳转，没代理时仍替它取清单、分片照旧直连；不是 HLS 的只能 302
+  let skipManifest = false
+  if (result.directRedirect) {
+    proxyMode = false
+    skipManifest = !relayMode || result.directRedirect === 'not-hls'
+  }
+  if (!skipManifest && (relayMode || proxyMode || result.relayHls)) {
     // 服务端取回清单、相对路径改写为绝对地址后直出，播放器无需跟随任何跳转
     const failKey = proxyMode ? proxyPid : routeUrl.split('?')[0]
     let manifest = inlineResolvedManifest(result)
@@ -1475,7 +1511,12 @@ async function handleRequest(req, res) {
       // 熔断窗口内：直接走下方 302 回退，不再替播放器把重试打到上游
       manifestDiag.reason = '熔断窗口内未打上游'
     } else {
-      manifest = await fetchManifestDirect(result.playURL, result.upstreamHeaders, manifestDiag, result.upstreamFamily)
+      const ref = routeUrl.split('?')[0].split('/').filter(Boolean).at(-1).replace(/\.m3u8$/, '')
+      const owner = resolverFor(ref)
+      const fetchMedia = owner?.fetchProxyMedia
+        ? (url, options) => owner.fetchProxyMedia(ref, getModuleConfig(owner.id), url, options)
+        : undefined
+      manifest = await fetchManifestDirect(result.playURL, result.upstreamHeaders, manifestDiag, result.upstreamFamily, fetchMedia)
       markManifestResult(failKey, manifest != null)
     }
     // 全代理：再把清单里的绝对地址换成本机同源相对地址，分片改由 /proxy/s<key>.ts 转发

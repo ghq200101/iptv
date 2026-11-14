@@ -5,7 +5,7 @@ import { printDebug, printGreen, printGrey, printRed, printYellow } from "./colo
 import { readConfig, parseInterfaceTxt, applyConfig, generateM3u8, generateTxt } from "./playlistConfig.js";
 import { getKeywordGroupRules } from "./groupRulesAPI.js";
 import { hasSourceFallbackGroups } from "./sourceGroupFallback.js";
-import { resolverFor, listModules } from "../extractors/registry.js";
+import { resolverFor, listModules, hasModule } from "../extractors/registry.js";
 import { getExtractorManager, getModuleConfig } from "./extractorManager.js";
 import { omitPlayerOnlyOpts } from "./channelOpts.js";
 import { fetchUpstreamResponse } from "./hlsProxy.js";
@@ -84,8 +84,8 @@ function bodySnippet(text) {
 // 取回一份 HLS 清单文本（跟随 302），非 200 或非 HLS 内容返回 null。
 // 失败时把原因写进 diag.reason：此前这里静默返回 null，用户日志只剩一行「取回失败」，
 // CDN 到底回了 403 还是回了一页 HTML，排查者对着日志猜不出来（北京时间电视台就卡在这一步）。
-async function fetchHls(url, signal, upstreamHeaders = {}, diag = {}, upstreamFamily) {
-  const resp = await fetchUpstreamResponse(url, {
+async function fetchHls(url, signal, upstreamHeaders = {}, diag = {}, upstreamFamily, fetchMedia = fetchUpstreamResponse) {
+  const resp = await fetchMedia(url, {
     signal,
     upstreamHeaders,
     upstreamFamily,
@@ -132,16 +132,16 @@ function firstVariantUrl(text, base) {
 // 兼容模式面向 NAS 与播放设备同一网络的家庭场景，正好不需要就近取流。
 // 返回 null 表示取清单失败或内容不是 HLS，调用方应回退 302；失败原因写进 diag.reason，
 // 由调用方拼进它自己那行限流过的「取回失败」日志，不在这里另起一行。
-async function fetchManifestDirect(playURL, upstreamHeaders = {}, diag = {}, upstreamFamily) {
+async function fetchManifestDirect(playURL, upstreamHeaders = {}, diag = {}, upstreamFamily, fetchMedia) {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), 10000)   // 覆盖两跳
   try {
-    const master = await fetchHls(playURL, ctrl.signal, upstreamHeaders, diag, upstreamFamily)
+    const master = await fetchHls(playURL, ctrl.signal, upstreamHeaders, diag, upstreamFamily, fetchMedia)
     if (!master) return null
 
     const variantUrl = firstVariantUrl(master.text, master.finalUrl)
     if (variantUrl) {
-      const media = await fetchHls(variantUrl, ctrl.signal, upstreamHeaders, {}, upstreamFamily)
+      const media = await fetchHls(variantUrl, ctrl.signal, upstreamHeaders, {}, upstreamFamily, fetchMedia)
       // 拍平成功：直接给播放器分片列表；失败则退回改写后的 master（跟随能力正常的播放器仍可播）
       if (media) return rewriteManifest(media.text, media.finalUrl)
       printDebug(`子清单取回失败，退回 master 清单: ${variantUrl}`)
@@ -308,14 +308,14 @@ function interfaceStr(url, headers, urlUserId, urlToken, profile, accessPrefix, 
     }
   }
 
-  // 剥离内部属性 source-ids（issue #29/#68 源归属标记）后再输出给播放器：
+  // 剥离内部属性 source-ids（源归属）与 identity-url（频道身份）后再输出给播放器：
   // 覆盖两条路径——原始 interface.txt 直出 与 applyConfig 重生成（generateM3u8 不写该属性，正则兜底无副作用）
   // 值里不许有空白：真正的源归属（migu / ext:<id> / bi:<id> / xt:<id>，分号分隔）从不含空白，
   // 放宽成 [^"]* 的话，第三方属性值里伪造的 ` source-ids=` 能跨到下一个属性。
   // 必须先展开占位符再剥离：反过来的话，第三方地址行 / #EXTVLCOPT 里可以写
   // `${re source-ids="x"place}`，剥掉中间一段正好拼出 `${replace}`，紧接着被换成带访问密码 /
   // 令牌的本机地址发给第三方——汇总时只拦得住字面量（见 replaceToken.js）。
-  result.content = `${result.content}`.replaceAll("${replace}", replaceHost).replace(/ source-ids="[^"\s]*"/g, "");
+  result.content = `${result.content}`.replaceAll("${replace}", replaceHost).replace(/ (?:source-ids|identity-url)="[^"\s]*"/g, "");
 
   // 原始缓存直出和配置档重生成都在这里处理；TXT 没有 M3U 选项，EPG 已提前返回。
   if (url !== '/txt') result.content = omitPlayerOnlyOpts(result.content)
@@ -391,7 +391,8 @@ async function channel(url, urlUserId, urlToken, client, request = {}) {
     // 另带客户端身份和 selfBase（这位客户端访问本实例用的地址前缀，仅清单直出时有）：
     // 模块要按播放器下发不同清单、或在清单里引用本机地址时用，用不上的模块不必理会。
     // query 是播放地址「?」后的参数，模块可据此按频道覆盖配置（如 ?quality= 画质，issue #185）。
-    const config = getExtractorManager().effectiveConfig(module)
+    // 挂上来的非模块解析者（自定义源经代理转发）没有模块配置；effectiveConfig 会给它在模块缓存里建条目
+    const config = hasModule(module.id) ? getExtractorManager().effectiveConfig(module) : {}
     resolved = await module.resolve(pid, {
       account: { userId: urlUserId, token: urlToken },
       config,
@@ -440,6 +441,9 @@ async function channel(url, urlUserId, urlToken, client, request = {}) {
   // 平台可要求旧的无后缀入口也直出动态 HLS 清单；用于兼容已收藏/已下发的旧地址。
   result.relayHls = resolved.relayHls === true
   result.proxyHls = resolved.proxyHls === true
+  // 自定义源「经网络代理转发」交回原地址（'no-proxy' 没有生效代理 / 'not-hls' 不是 HLS）：app.js 直接 302
+  result.directRedirect = resolved.directRedirect === 'no-proxy' || resolved.directRedirect === 'not-hls'
+    ? resolved.directRedirect : ''
   result.upstreamFamily = resolved.upstreamFamily === 4 || resolved.upstreamFamily === 6 ? resolved.upstreamFamily : undefined
   result.streamType = resolved.streamType || module.streamType || 'hls'
   result.validateMediaUrl = resolved.validateMediaUrl
