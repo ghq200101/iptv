@@ -31,6 +31,35 @@
 
 ---
 
+## 命令约定：先分清在哪台机器、用哪个 shell
+
+本文有两类命令，**不要混在同一个窗口里敲**：
+
+| 标记 | 在哪运行 | shell |
+|---|---|---|
+| 🪟 **本地** | 你的 Windows，工作目录 `E:\docker\iptv` | **PowerShell** |
+| 🐧 **VPS** | 服务器，工作目录 `/opt/iptv` | bash |
+
+最容易踩的坑：`tail`、`grep`、`ls`、`cat`、`rm` 是 Linux 命令，PowerShell 里没有，
+直接敲会报 `无法将"tail"项识别为 cmdlet、函数、脚本文件或可运行程序的名称`。
+
+本地对应的写法：
+
+| Linux | PowerShell |
+|---|---|
+| `tail -5` | `Select-Object -Last 5` |
+| `head -5` | `Select-Object -First 5` |
+| `grep 关键字 文件` | `Select-String -Path 文件 -Pattern 关键字` |
+| `grep -c` | `(Select-String ...).Count` |
+| `ls` | `Get-ChildItem` |
+| `cat 文件` | `Get-Content 文件` |
+| `rm 文件` | `Remove-Item 文件` |
+| `which git` | `Get-Command git` |
+
+完整对照见文末「附录 A」。
+
+---
+
 ## 0. 三条原则
 
 这三条想清楚，后面就不会乱。
@@ -102,16 +131,20 @@ sudo /usr/local/bin/update-iptv.sh --check
 
 ### 1.5 验证整条链路
 
-改一个不影响功能的文件（比如 `docs/` 里加一行），提交推送，然后：
+改一个不影响功能的文件（比如 `docs/` 里加一行），提交推送。
 
-```bash
-# 本地看
+🪟 **本地 PowerShell**：
+
+```powershell
 git log --oneline -1
 git push origin main
+```
 
-# GitHub 网页 → Actions → 看 "Docker Publish" 是否全绿
+然后去 GitHub 网页 → Actions → 看 "Docker Publish" 是否全绿。
 
-# VPS 上立刻触发一次（不等 3 点）
+🐧 **VPS（bash）** —— 立刻触发一次，不等 3 点：
+
+```bash
 sudo systemctl start iptv-update.service
 journalctl -u iptv-update.service -n 30 --no-pager
 ```
@@ -124,11 +157,14 @@ journalctl -u iptv-update.service -n 30 --no-pager
 
 ### 2.1 标准流程
 
-```bash
-cd E:/docker/iptv
+🪟 **本地 PowerShell**（`git` 命令本身两个 shell 通用，主要是别混入 `tail`/`grep`）：
+
+```powershell
+cd E:\docker\iptv
 
 # 1) 先同步，避免基于旧代码开工
-git fetch origin && git status
+git fetch origin
+git status
 
 # 2) 改代码
 #    ...
@@ -172,10 +208,10 @@ utils/**  extractors/**  web/**  scripts/**  .dockerignore  .github/workflows/**
 
 ### 2.3 本地快速验证
 
-不用每次推了才看结果。最轻的做法：
+🪟 **本地 PowerShell**。不用每次推了才看结果，最轻的做法：
 
-```bash
-cd E:/docker/iptv
+```powershell
+cd E:\docker\iptv
 npm ci                 # 首次
 node app.js            # 直接跑源码，默认监听 2086
 ```
@@ -184,7 +220,7 @@ node app.js            # 直接跑源码，默认监听 2086
 
 想连 Docker 一起验：
 
-```bash
+```powershell
 docker compose build   # 只构建，不推
 docker compose up -d
 ```
@@ -203,7 +239,7 @@ docker compose up -d
 
 ### 2.5 立即让 VPS 更新
 
-不想等 3 点：
+🐧 **VPS（bash）**，不想等 3 点：
 
 ```bash
 sudo systemctl start iptv-update.service
@@ -216,45 +252,85 @@ journalctl -u iptv-update.service -n 20 --no-pager
 
 Fork 的成本就在这里：上游一直在发版，你得手动合。
 
-```bash
-cd E:/docker/iptv
+🪟 **本地 PowerShell**：
 
-git fetch upstream --tags          # 拉取上游标签
-git tag -l 'v4.*' | tail -5        # 看最新有哪些版本
+```powershell
+cd E:\docker\iptv
 
-git merge v4.61.0                  # 合并目标版本
+git fetch upstream --tags                       # 拉取上游标签
+
+# 看最新 5 个版本（PowerShell 没有 tail）
+git tag -l 'v4.*' | Sort-Object { [version]($_ -replace '^v','') } | Select-Object -Last 5
+
+git merge v4.72.0                              # 换成要合的目标版本
 ```
 
-### 3.1 冲突只可能出现在一个地方
+> 如果你在 Git Bash 里操作，可以照旧用 `git tag -l 'v4.*' | tail -5`。
+> 混着用在同一个窗口里就会报「无法将 tail 项识别为 cmdlet」——这正是本文要避免的。
 
-正常情况只有 `.github/workflows/push_docker.yaml` 会冲突——因为上游的工作流推的是
-`akiralereal/iptv`，而你的是 `ghq200101/iptv`。**一律保留自己的**：
+### 3.1 冲突只有两个文件
 
-```bash
+| 文件 | 处理 | 原因 |
+|---|---|---|
+| `.github/workflows/push_docker.yaml` | 保留自己的（`--ours`） | 上游推 `akiralereal/iptv`，你推 `ghq200101/iptv` |
+| `package.json` | 取上游（`--theirs`），再把 version 改成 `v4.xx.1` | 两边都改过 `version` 字段 |
+
+🪟 **本地 PowerShell**：
+
+```powershell
+# 1) workflow 保留自己的
 git checkout --ours -- .github/workflows/push_docker.yaml
 git add .github/workflows/push_docker.yaml
-git commit -m "Merge upstream v4.61.0"
+
+# 2) package.json 取上游，再把版本号改成 v4.xx.1（含自己的补丁，版本号和上游区分开）
+git checkout --theirs -- package.json
+$p = 'package.json'
+$t = [IO.File]::ReadAllText($p)
+$t = [regex]::Replace($t, '"version":\s*"[^"]+"', '"version": "4.72.1"', 1)
+[IO.File]::WriteAllText($p, $t)
+git add package.json
+
+git commit -m "Merge upstream v4.72.0"
 ```
 
-`docker-compose.yml`、`deploy/`、`docs/`、`.dockerignore` 之所以不冲突，是因为上游
-没有这些文件（或改动不重叠），git 会自动保留你的版本。
+> 改文件那两行别用 `Set-Content`/`Out-File`——Windows PowerShell 5.1 会写成带 BOM 的 UTF-8，
+> 严重的会把中文注释变成乱码（真出过事故，导致 CI 直接失败）。`[IO.File]::WriteAllText`
+> 写的是无 BOM 的 UTF-8，两个版本都安全。
+
+其余文件（`docker-compose.yml`、`deploy/`、`docs/`、`.dockerignore`）不会冲突：上游没有这些
+文件，或改动不重叠，git 会自动保留你的版本。
 
 ### 3.2 合并后必查三件事
 
-```bash
-# 1) 版本号是否跟上了上游
-grep '"version"' package.json
+🪟 **本地 PowerShell**：
 
-# 2) compose 的端口还得是本机绑定
-grep -n '127.0.0.1\|mhost' docker-compose.yml
+```powershell
+# 1) 版本号（应该是 v4.xx.1，比上游多一个补丁号）
+(Get-Content package.json -Raw -Encoding UTF8 | ConvertFrom-Json).version
 
-# 3) 自己的部署文件还在
-ls deploy/
+# 2) compose 的端口必须还是本机绑定
+Select-String -Path docker-compose.yml -Pattern '127.0.0.1|mhost'
+
+# 3) 自己的部署文件还在（应该是 7 个）
+(Get-ChildItem deploy).Count
+```
+
+想一次看全，可以跑：
+
+```powershell
+@(
+  "version = " + (Get-Content package.json -Raw -Encoding UTF8 | ConvertFrom-Json).version
+  "compose  = " + ((Select-String -Path docker-compose.yml -Pattern '127\.0\.0\.1:2086').Line -replace '^\s+','')
+  "deploy   = " + (Get-ChildItem deploy).Count + ' 个文件'
+  "yangshipin 修复 = " + (Select-String -Path extractors\yangshipin\browser-auth.js -Pattern 'Boolean\(window\.yspLogin').Count
+) -join "`n"
 ```
 
 ### 3.3 发布
 
-```bash
+🪟 **本地 PowerShell**：
+
+```powershell
 git push origin main
 ```
 
@@ -380,3 +456,72 @@ docker compose up -d
 | 更新锁 | `/var/lock/iptv-update.lock` |
 | 域名 | `https://iptv.czghq.com` |
 | 老设备入口 | `http://iptv.czghq.com/interface.m3u` |
+
+---
+
+## 附录 A：PowerShell ↔ bash 对照
+
+本地是 Windows，默认 shell 是 **PowerShell**；VPS 上是 **bash**。同样的意图，两边写法不同。
+
+| 用途 | bash（VPS） | PowerShell（本地） |
+|---|---|---|
+| 看最后 5 行 | `tail -5` | `Select-Object -Last 5` |
+| 看前 5 行 | `head -5` | `Select-Object -First 5` |
+| 搜文件内容 | `grep 关键词 文件` | `Select-String -Path 文件 -Pattern 关键词` |
+| 递归搜目录 | `grep -rn 关键词 .` | `Get-ChildItem -Recurse -File \| Select-String -Pattern 关键词` |
+| 统计匹配行数 | `grep -c 关键词 文件` | `(Select-String -Path 文件 -Pattern 关键词).Count` |
+| 列目录 | `ls -l` | `Get-ChildItem` |
+| 看文件 | `cat 文件` | `Get-Content 文件 -Encoding UTF8` |
+| 删文件 | `rm 文件` | `Remove-Item 文件` |
+| 命令在哪 | `which git` | `Get-Command git` |
+| 环境变量 | `echo $PATH` | `$env:PATH` |
+| 提取 JSON 字段 | `jq -r .version` | `(Get-Content x -Raw -Encoding UTF8 \| ConvertFrom-Json).version` |
+| 原地改文件 | `sed -i` | `[IO.File]::WriteAllText(...)`（见 3.1） |
+
+### A.1 四个必须注意的坑
+
+1. **`tail` / `grep` / `ls` / `cat` / `rm` 在 PowerShell 里不存在**，会报
+   `CommandNotFoundException`。截图里那个红字就是这么来的。
+2. **别用 `Set-Content` / `Out-File` 改仓库文件**。Windows PowerShell 5.1 会写成带 BOM 或
+   按 ANSI 编码，中文注释会变成乱码（真出过事故，CI 直接失败）。
+   统一用 `[IO.File]::ReadAllText` + `[IO.File]::WriteAllText`。
+3. **`&&` 在 PowerShell 5.1 不支持**（7.0+ 才支持）。用 `;` 分隔，或分成两行。
+4. **双引号里的 `$` 会被展开**。git commit 信息里如果有 `$`，用单引号包起来。
+
+### A.2 一次完整的上游同步（可直接照抄）
+
+🪟 **本地 PowerShell**（把 `4.72.0` 换成目标版本）：
+
+```powershell
+cd E:\docker\iptv
+
+git fetch upstream --tags
+git tag -l 'v4.*' | Sort-Object { [version]($_ -replace '^v','') } | Select-Object -Last 5
+
+git merge v4.72.0
+
+# 冲突 1：workflow 保留自己的
+git checkout --ours -- .github/workflows/push_docker.yaml
+git add .github/workflows/push_docker.yaml
+
+# 冲突 2：package.json 取上游，再把版本号 +1
+git checkout --theirs -- package.json
+$p = 'package.json'
+$t = [IO.File]::ReadAllText($p)
+$t = [regex]::Replace($t, '"version":\s*"[^"]+"', '"version": "4.72.1"', 1)
+[IO.File]::WriteAllText($p, $t)
+git add package.json
+
+git commit -m 'Merge upstream v4.72.0'
+git push origin main
+```
+
+🐧 **VPS（bash）**：
+
+```bash
+cd /opt/iptv
+git fetch origin && git reset --hard origin/main
+systemctl start iptv-update.service
+journalctl -u iptv-update.service -n 20 --no-pager
+```
+
